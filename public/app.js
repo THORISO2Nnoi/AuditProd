@@ -21,7 +21,21 @@ const AuditProApp = (() => {
       dateTo: ''
     },
     cachedAuditLogs: [],
-    searchDebounceTimer: null
+    searchDebounceTimer: null,
+    sessionStartTime: parseInt(localStorage.getItem('auditpro_session_start')) || Date.now(),
+    sessionTimerInterval: null,
+    heartbeatInterval: null,
+    footprintFilters: {
+      actor: '',
+      type: '',
+      search: ''
+    },
+    footprintPagination: {
+      page: 1,
+      limit: 15,
+      total: 0,
+      totalPages: 1
+    }
   };
 
   /**
@@ -122,6 +136,7 @@ const AuditProApp = (() => {
           const data = await res.json();
           state.currentUser = data.user;
           state.currentJti = data.jti || state.currentJti;
+          startSessionTimers();
           applyRoleExperience();
           loadDashboardData();
           return;
@@ -173,22 +188,23 @@ const AuditProApp = (() => {
 
     if (role === 'admin') {
       bannerTitle.textContent = 'Admin Control Center';
-      bannerSubtitle.textContent = 'Full administrative control over Auth DB, Business DB, and Audit Forensics with 3-DB isolation.';
+      bannerSubtitle.textContent = 'Full operational oversight, user presence tracking, and immutable activity auditing.';
       bannerIcon.textContent = '👑';
     } else if (role === 'auditor') {
       bannerTitle.textContent = 'Compliance & Forensics Center';
-      bannerSubtitle.textContent = 'Immutable forensic audit inspection, cryptographic JTI tracing, and read-only operational oversight.';
+      bannerSubtitle.textContent = 'Forensic audit inspection, user presence tracking, and read-only operational oversight.';
       bannerIcon.textContent = '🔍';
     } else {
       bannerTitle.textContent = `${user.full_name}'s Isolated Workspace`;
-      bannerSubtitle.textContent = 'Operational task workspace. Strict identity isolation ensures zero access to peer data or audit records.';
+      bannerSubtitle.textContent = 'Operational task workspace. Tasks created by other users cannot be modified or deleted.';
       bannerIcon.textContent = '👤';
     }
 
-    // Role-Aware Navigation Tabs Visibility
+    // Role-Aware Navigation Tabs Visibility (5 Unified Tabs)
     const tabCompliance = document.getElementById('tabCompliance');
-    const tabAuditLogs = document.getElementById('tabAuditLogs');
-    const tabJwtForensics = document.getElementById('tabJwtForensics');
+    const tabFootprints = document.getElementById('tabFootprints');
+    const tabProducts = document.getElementById('tabProducts');
+    const tabTasks = document.getElementById('tabTasks');
     const tabUsers = document.getElementById('tabUsers');
     const btnCreateProduct = document.getElementById('btnCreateProduct');
     const productsNotice = document.getElementById('productsAuditorNotice');
@@ -196,36 +212,39 @@ const AuditProApp = (() => {
     const tasksTabTitle = document.getElementById('tasksTabTitle');
 
     if (role === 'admin') {
-      tabCompliance.style.display = 'inline-flex';
-      tabAuditLogs.style.display = 'inline-flex';
-      tabJwtForensics.style.display = 'inline-flex';
-      tabUsers.style.display = 'inline-flex';
-      btnCreateProduct.style.display = 'inline-flex';
-      productsNotice.style.display = 'none';
-      userWorkspaceNotice.style.display = 'none';
-      tasksTabTitle.textContent = 'All System Tasks';
+      if (tabCompliance) tabCompliance.style.display = 'inline-flex';
+      if (tabFootprints) tabFootprints.style.display = 'inline-flex';
+      if (tabProducts) tabProducts.style.display = 'inline-flex';
+      if (tabTasks) tabTasks.style.display = 'inline-flex';
+      if (tabUsers) tabUsers.style.display = 'inline-flex';
+      if (btnCreateProduct) btnCreateProduct.style.display = 'inline-flex';
+      if (productsNotice) productsNotice.style.display = 'none';
+      if (userWorkspaceNotice) userWorkspaceNotice.style.display = 'none';
+      if (tasksTabTitle) tasksTabTitle.textContent = 'All System Tasks';
     } else if (role === 'auditor') {
-      tabCompliance.style.display = 'inline-flex';
-      tabAuditLogs.style.display = 'inline-flex';
-      tabJwtForensics.style.display = 'inline-flex';
-      tabUsers.style.display = 'none'; // Auditor doesn't manage identities
-      btnCreateProduct.style.display = 'none'; // Auditor is strictly read-only
-      productsNotice.style.display = 'block';
-      userWorkspaceNotice.style.display = 'none';
-      tasksTabTitle.textContent = 'Tasks (Audit Oversight)';
+      if (tabCompliance) tabCompliance.style.display = 'inline-flex';
+      if (tabFootprints) tabFootprints.style.display = 'inline-flex';
+      if (tabProducts) tabProducts.style.display = 'inline-flex';
+      if (tabTasks) tabTasks.style.display = 'inline-flex';
+      if (tabUsers) tabUsers.style.display = 'none'; // Auditor doesn't manage identities
+      if (btnCreateProduct) btnCreateProduct.style.display = 'none'; // Auditor is strictly read-only
+      if (productsNotice) productsNotice.style.display = 'block';
+      if (userWorkspaceNotice) userWorkspaceNotice.style.display = 'none';
+      if (tasksTabTitle) tasksTabTitle.textContent = 'Tasks (Audit Oversight)';
     } else {
       // Regular User (Alice / Bob)
-      tabCompliance.style.display = 'none';
-      tabAuditLogs.style.display = 'none';
-      tabJwtForensics.style.display = 'none';
-      tabUsers.style.display = 'none';
-      btnCreateProduct.style.display = 'none';
-      productsNotice.style.display = 'none';
-      userWorkspaceNotice.style.display = 'block';
-      tasksTabTitle.textContent = 'My Assigned Tasks';
+      if (tabCompliance) tabCompliance.style.display = 'none';
+      if (tabFootprints) tabFootprints.style.display = 'none';
+      if (tabProducts) tabProducts.style.display = 'inline-flex';
+      if (tabTasks) tabTasks.style.display = 'inline-flex';
+      if (tabUsers) tabUsers.style.display = 'none';
+      if (btnCreateProduct) btnCreateProduct.style.display = 'none';
+      if (productsNotice) productsNotice.style.display = 'none';
+      if (userWorkspaceNotice) userWorkspaceNotice.style.display = 'block';
+      if (tasksTabTitle) tasksTabTitle.textContent = 'My Assigned Tasks';
 
       // If user was on a forbidden tab, move them to tasks
-      if (['compliance', 'auditLogs', 'jwtForensics', 'users'].includes(state.currentTab)) {
+      if (['compliance', 'footprints', 'users'].includes(state.currentTab)) {
         switchTab('tasks');
       }
     }
@@ -233,15 +252,97 @@ const AuditProApp = (() => {
     updateJtiDisplay();
   }
 
-  function updateJtiDisplay() {
-    const el = document.getElementById('sessionJtiDisplay');
-    if (el) {
-      el.textContent = state.currentJti ? state.currentJti : 'No Active Session';
+  /* ================= REAL-TIME SESSION DWELL TIME & HEARTBEAT ================= */
+  function startSessionTimers() {
+    if (!state.sessionStartTime) {
+      state.sessionStartTime = Date.now();
+      localStorage.setItem('auditpro_session_start', state.sessionStartTime);
     }
+
+    if (state.sessionTimerInterval) clearInterval(state.sessionTimerInterval);
+    if (state.heartbeatInterval) clearInterval(state.heartbeatInterval);
+
+    function updateTimerUI() {
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - state.sessionStartTime) / 1000));
+      const mins = Math.floor(elapsedSec / 60);
+      const secs = elapsedSec % 60;
+      const el = document.getElementById('sessionTimerDisplay');
+      if (el) {
+        el.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+    }
+
+    updateTimerUI();
+    state.sessionTimerInterval = setInterval(updateTimerUI, 1000);
+
+    // Sync live heartbeat to server every 20 seconds
+    async function sendHeartbeat() {
+      if (!state.accessToken || !state.currentUser) return;
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - state.sessionStartTime) / 1000));
+      try {
+        await apiRequest('/api/auth/heartbeat', {
+          method: 'POST',
+          body: JSON.stringify({
+            durationSeconds: elapsedSec,
+            currentView: state.currentTab || 'Dashboard'
+          })
+        });
+      } catch (err) {
+        // non-blocking
+      }
+    }
+
+    sendHeartbeat();
+    state.heartbeatInterval = setInterval(sendHeartbeat, 20000);
+  }
+
+  function stopSessionTimers() {
+    if (state.sessionTimerInterval) clearInterval(state.sessionTimerInterval);
+    if (state.heartbeatInterval) clearInterval(state.heartbeatInterval);
+    state.sessionTimerInterval = null;
+    state.heartbeatInterval = null;
+    state.sessionStartTime = null;
+    localStorage.removeItem('auditpro_session_start');
+    const el = document.getElementById('sessionTimerDisplay');
+    if (el) el.textContent = '00:00';
   }
 
   /**
-   * Tab Switching
+   * Automatically records an uneditable view footprint whenever a user visits or views a screen
+   */
+  async function recordViewFootprint(tabId) {
+    if (!state.accessToken || !state.currentUser) return;
+    const tabNames = {
+      compliance: 'System Overview & Metrics',
+      footprints: 'User Footprints & Audit Trail',
+      products: 'Products Inventory',
+      tasks: 'System Tasks Workspace',
+      users: 'User Accounts & Directory'
+    };
+    const viewName = tabNames[tabId] || tabId;
+    const elapsedSec = state.sessionStartTime ? Math.max(0, Math.floor((Date.now() - state.sessionStartTime) / 1000)) : 0;
+
+    try {
+      await apiRequest('/api/audit/view', {
+        method: 'POST',
+        body: JSON.stringify({
+          viewName,
+          entityType: 'screen_view',
+          entityId: tabId,
+          durationInView: elapsedSec
+        })
+      });
+    } catch (e) {
+      // non-blocking
+    }
+  }
+
+  function updateJtiDisplay() {
+    // JWT information is hidden from display per requirements
+  }
+
+  /**
+   * Tab Switching (Unified 5-Tab Architecture)
    */
   function switchTab(tabId) {
     state.currentTab = tabId;
@@ -252,8 +353,7 @@ const AuditProApp = (() => {
 
     const tabMap = {
       compliance: { btn: 'tabCompliance', pane: 'paneCompliance', loader: loadComplianceStats },
-      auditLogs: { btn: 'tabAuditLogs', pane: 'paneAuditLogs', loader: loadAuditLogs },
-      jwtForensics: { btn: 'tabJwtForensics', pane: 'paneJwtForensics', loader: loadJwtEvents },
+      footprints: { btn: 'tabFootprints', pane: 'paneFootprints', loader: loadFootprintsTab },
       products: { btn: 'tabProducts', pane: 'paneProducts', loader: loadProducts },
       tasks: { btn: 'tabTasks', pane: 'paneTasks', loader: loadTasks },
       users: { btn: 'tabUsers', pane: 'paneUsers', loader: loadUsers }
@@ -265,17 +365,20 @@ const AuditProApp = (() => {
       document.getElementById(target.pane)?.classList.add('active');
       if (target.loader) target.loader();
     }
+
+    // Immutably record view footprint into audit trail
+    recordViewFootprint(tabId);
   }
 
   /**
    * Load Data for all active screens
    */
   function loadDashboardData() {
-    if (state.currentUser.role === 'user') {
+    if (state.currentUser && state.currentUser.role === 'user') {
       switchTab('tasks');
     } else {
       loadComplianceStats();
-      if (state.currentTab === 'auditLogs') loadAuditLogs();
+      if (state.currentTab === 'footprints') loadFootprintsTab();
       if (state.currentTab === 'products') loadProducts();
       if (state.currentTab === 'tasks') loadTasks();
       if (state.currentTab === 'users') loadUsers();
@@ -284,138 +387,36 @@ const AuditProApp = (() => {
 
   /* ================= 1. COMPLIANCE & HEALTH STATS ================= */
   async function loadComplianceStats() {
-    if (state.currentUser.role === 'user') return;
+    if (!state.currentUser || state.currentUser.role === 'user') return;
 
     try {
       const res = await apiRequest('/api/reports/stats');
       if (!res.ok) return;
       const data = await res.json();
 
-      document.getElementById('metricHealthScore').textContent = data.healthScore || '100%';
-      document.getElementById('metricTotalLogs').textContent = (data.totalLogs || 0).toLocaleString();
-      document.getElementById('metricTodayLogs').textContent = (data.todayLogs || 0).toLocaleString();
-      document.getElementById('metricAccessDenied').textContent = (data.deniedCount || 0).toLocaleString();
-      document.getElementById('metricDeniedCount').textContent = (data.deniedCount || 0);
-      document.getElementById('metricFailedLogins').textContent = (data.failedCount || 0).toLocaleString();
-      document.getElementById('metricTrackedJtis').textContent = (data.uniqueJtis || 0).toLocaleString();
-      document.getElementById('metricTamperBlocked').textContent = (data.blockedCount || 0).toLocaleString();
+      const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+      setEl('metricHealthScore', data.healthScore || '100%');
+      setEl('metricTotalLogs', (data.totalLogs || 0).toLocaleString());
+      setEl('metricTodayLogs', (data.todayLogs || 0).toLocaleString());
+      setEl('metricAccessDenied', (data.deniedCount || 0).toLocaleString());
+      setEl('metricDeniedCount', data.deniedCount || 0);
+      setEl('metricFailedLogins', (data.failedCount || 0).toLocaleString());
+
+      if (data.sessionStats) {
+        setEl('overviewActiveUsers', data.sessionStats.activeUsersCount || 0);
+        setEl('overviewAvgStay', data.sessionStats.averageStayFormatted || '0s');
+        setEl('footprintsActiveUsers', data.sessionStats.activeUsersCount || 0);
+        setEl('footprintsAvgStay', data.sessionStats.averageStayFormatted || '0s');
+        setEl('footprintsTotalSessions', data.sessionStats.totalSessions || 0);
+        setEl('footprintsTotalFootprints', (data.totalLogs || 0).toLocaleString());
+      }
     } catch (e) {
       console.error('Failed to load compliance stats:', e);
     }
   }
 
-  /* ================= 2. FORENSIC AUDIT LOGS ================= */
-  async function loadAuditLogs() {
-    if (state.currentUser.role === 'user') return;
-
-    const tbody = document.getElementById('auditLogsBody');
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center">Querying immutable records from audit.db...</td></tr>`;
-
-    const params = new URLSearchParams({
-      page: state.auditFilters.page,
-      limit: state.auditFilters.limit,
-      username: state.auditFilters.username,
-      event: state.auditFilters.event,
-      status: state.auditFilters.status,
-      entity_type: state.auditFilters.entity_type,
-      search: state.auditFilters.search,
-      dateFrom: state.auditFilters.dateFrom,
-      dateTo: state.auditFilters.dateTo
-    });
-
-    try {
-      const res = await apiRequest(`/api/audit/logs?${params.toString()}`);
-      if (!res.ok) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger">Failed to load audit logs.</td></tr>`;
-        return;
-      }
-
-      const data = await res.json();
-      state.cachedAuditLogs = data.logs || [];
-
-      // Update pagination
-      document.getElementById('pageInfo').textContent = `Showing page ${data.page} of ${data.totalPages || 1} (${data.total} records)`;
-      document.getElementById('btnPrevPage').disabled = data.page <= 1;
-      document.getElementById('btnNextPage').disabled = data.page >= data.totalPages;
-
-      if (state.cachedAuditLogs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">No audit records match the current filter criteria.</td></tr>`;
-        return;
-      }
-
-      tbody.innerHTML = state.cachedAuditLogs.map(log => {
-        let statusBadge = 'badge-success';
-        if (log.status === 'DENIED') statusBadge = 'badge-danger';
-        else if (log.status === 'FAILED') statusBadge = 'badge-warning';
-        else if (log.status === 'BLOCKED') statusBadge = 'badge-purple';
-
-        const jtiDisplay = log.jti ? log.jti.substring(0, 8) + '...' : 'SYSTEM';
-
-        return `
-          <tr class="clickable-row" onclick="AuditProApp.inspectLogDiff(${log.id})" title="Click to view Before/After Yellow Diff">
-            <td class="mono">#${log.id}</td>
-            <td class="text-muted" style="font-size:0.78rem;">${new Date(log.timestamp).toLocaleString()}</td>
-            <td><span class="badge ${log.event.includes('DENIED') ? 'badge-danger' : log.event.includes('LOGIN') ? 'badge-blue' : 'badge-purple'}">${log.event}</span></td>
-            <td><strong>${log.username || 'system'}</strong> <span class="text-muted">(${log.role || 'sys'})</span></td>
-            <td><span class="badge ${statusBadge}">${log.status}</span></td>
-            <td>${escapeHtml(log.action || '')}</td>
-            <td><span class="tag">${log.entity_type || '—'}</span></td>
-            <td class="mono text-muted" title="${log.jti || ''}">${jtiDisplay}</td>
-            <td>
-              <button class="btn btn-sm btn-outline-accent" onclick="event.stopPropagation(); AuditProApp.inspectLogDiff(${log.id})">
-                Inspect Diff
-              </button>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger">Error: ${e.message}</td></tr>`;
-    }
-  }
-
-  function applyFilters() {
-    state.auditFilters.username = document.getElementById('filterUsername').value;
-    state.auditFilters.event = document.getElementById('filterEvent').value;
-    state.auditFilters.status = document.getElementById('filterStatus').value;
-    state.auditFilters.page = 1;
-    loadAuditLogs();
-  }
-
-  function debouncedFilter() {
-    clearTimeout(state.searchDebounceTimer);
-    state.searchDebounceTimer = setTimeout(() => {
-      state.auditFilters.search = document.getElementById('filterSearch').value;
-      state.auditFilters.page = 1;
-      loadAuditLogs();
-    }, 300);
-  }
-
-  function resetFilters() {
-    document.getElementById('filterSearch').value = '';
-    document.getElementById('filterUsername').value = '';
-    document.getElementById('filterEvent').value = '';
-    document.getElementById('filterStatus').value = '';
-    state.auditFilters = {
-      page: 1,
-      limit: 12,
-      username: '',
-      event: '',
-      status: '',
-      entity_type: '',
-      search: '',
-      dateFrom: '',
-      dateTo: ''
-    };
-    loadAuditLogs();
-  }
-
-  function changePage(delta) {
-    state.auditFilters.page = Math.max(1, state.auditFilters.page + delta);
-    loadAuditLogs();
-  }
-
-  /* ================= 3. 🌟 BEFORE/AFTER YELLOW DIFF INSPECTOR ================= */
+  /* ================= 2. 🌟 BEFORE/AFTER DIFF INSPECTOR ================= */
   async function inspectLogDiff(logId) {
     try {
       const res = await apiRequest(`/api/audit/logs/${logId}`);
@@ -426,13 +427,17 @@ const AuditProApp = (() => {
 
       const { log } = await res.json();
 
-      document.getElementById('diffLogId').textContent = `#${log.id}`;
-      document.getElementById('diffTimestamp').textContent = new Date(log.timestamp).toLocaleString();
-      document.getElementById('diffActor').textContent = `${log.username} (${log.role})`;
-      document.getElementById('diffIp').textContent = `${log.ip_address} | UA: ${log.user_agent ? log.user_agent.substring(0, 30) + '...' : 'Unknown'}`;
-      document.getElementById('diffJti').textContent = log.jti || 'N/A';
-      document.getElementById('diffActionText').textContent = log.action;
-      document.getElementById('diffModalEventBadge').textContent = log.event;
+      const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+      setEl('diffLogId', `#${log.id}`);
+      setEl('diffTimestamp', new Date(log.timestamp).toLocaleString());
+      setEl('diffActor', `${log.username} (${log.role})`);
+      setEl('diffIp', `${log.ip_address} | UA: ${log.user_agent ? log.user_agent.substring(0, 30) + '...' : 'Unknown'}`);
+      setEl('diffActionText', log.action);
+      setEl('diffModalEventBadge', log.event);
+
+      const diffJtiEl = document.getElementById('diffJti');
+      if (diffJtiEl) diffJtiEl.textContent = log.jti || 'N/A';
 
       // Populate Snapshots JSON
       document.getElementById('rawBeforeJson').textContent = log.before_snapshot_parsed ? JSON.stringify(log.before_snapshot_parsed, null, 2) : 'null (Created or Initial State)';
@@ -449,7 +454,7 @@ const AuditProApp = (() => {
         diffCountBadge.textContent = 'No delta recorded';
         diffContainer.innerHTML = `
           <div class="diff-card-item" style="border-color: rgba(255,255,255,0.1); background: rgba(255,255,255,0.03);">
-            <div class="diff-field-name" style="color: var(--text-muted);">Action did not modify record fields directly (e.g. Authentication or Access Check)</div>
+            <div class="diff-field-name" style="color: var(--text-muted);">Action did not modify record fields directly (e.g. Screen View or Authentication)</div>
           </div>
         `;
       } else {
@@ -496,14 +501,12 @@ const AuditProApp = (() => {
     document.getElementById('diffModalOverlay').style.display = 'none';
   }
 
-  /* ================= 4. EXPORT AUDIT TRAIL ================= */
+  /* ================= 3. EXPORT AUDIT TRAIL ================= */
   async function exportAudit(format = 'csv') {
     const params = new URLSearchParams({
-      username: state.auditFilters.username,
-      event: state.auditFilters.event,
-      status: state.auditFilters.status,
-      entity_type: state.auditFilters.entity_type,
-      search: state.auditFilters.search
+      username: state.footprintFilters.actor || '',
+      event: state.footprintFilters.type || '',
+      search: state.footprintFilters.search || ''
     });
 
     try {
@@ -519,113 +522,25 @@ const AuditProApp = (() => {
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `auditpro-export-${new Date().toISOString().substring(0, 10)}.${format}`;
+      a.download = `auditpro-footprints-${new Date().toISOString().substring(0, 10)}.${format}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(downloadUrl);
 
-      showToast(`Exported audit logs to ${format.toUpperCase()} (Action was audited!)`, 'success');
+      showToast(`Exported user footprints & activity trail to ${format.toUpperCase()}`, 'success');
 
-      // Refresh logs so the EXPORT_REPORT action appears in the audit list
-      setTimeout(() => loadAuditLogs(), 800);
+      // Refresh activity footprints list
+      setTimeout(() => loadFootprintsStream(), 800);
     } catch (e) {
       showToast(`Export error: ${e.message}`, 'error');
     }
   }
 
-  /* ================= 5. LIVE IMMUTABILITY TAMPER LAB ================= */
-  function openImmutabilityModal() {
-    document.getElementById('immutabilityModalOverlay').style.display = 'flex';
-  }
-
-  function closeImmutabilityModal() {
-    document.getElementById('immutabilityModalOverlay').style.display = 'none';
-  }
-
-  async function runTamperTest(type = 'UPDATE') {
-    const consoleOutput = document.getElementById('tamperConsoleOutput');
-    consoleOutput.innerHTML = `[Executing] Dispatching malicious raw SQL ${type} attempt against audit.db...`;
-
-    try {
-      const res = await apiRequest('/api/audit/test-immutability', {
-        method: 'POST',
-        body: JSON.stringify({ type })
-      });
-
-      const data = await res.json();
-
-      if (data.blocked) {
-        consoleOutput.innerHTML = `
-<span class="blocked-msg">🛑 [ATTACK BLOCKED] SQLite Engine Trigger Executed ABORT!</span>
-Simulated Rogue SQL:  <code>${escapeHtml(data.simulatedQuery)}</code>
-Database Error:       <strong>${escapeHtml(data.errorMessage)}</strong>
-Trigger Active:       ${data.triggerActive}
-Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
-
-<span class="success-proof">✅ Proof Verified: Direct UPDATE/DELETE statements are unconditionally rejected at the SQLite engine level.</span>
-        `;
-        showToast(`Trigger intercepted ${type}! Engine aborted tamper attempt.`, 'purple');
-        loadComplianceStats();
-        if (state.currentTab === 'auditLogs') loadAuditLogs();
-      } else {
-        consoleOutput.innerHTML = `[Warning] Query was not blocked: ${JSON.stringify(data)}`;
-      }
-    } catch (err) {
-      consoleOutput.innerHTML = `<span class="blocked-msg">Error executing test: ${err.message}</span>`;
-    }
-  }
-
-  /* ================= 6. JWT FORENSICS ================= */
-  async function loadJwtEvents() {
-    if (state.currentUser.role === 'user') return;
-
-    const tbody = document.getElementById('jwtEventsBody');
-    tbody.innerHTML = `<tr><td colspan="8" class="text-center">Loading JWT lifecycle events...</td></tr>`;
-
-    try {
-      const res = await apiRequest('/api/audit/jwt-events?limit=50');
-      if (!res.ok) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Failed to load JWT events</td></tr>`;
-        return;
-      }
-
-      const data = await res.json();
-      const events = data.events || [];
-
-      if (events.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No JWT events recorded yet.</td></tr>`;
-        return;
-      }
-
-      tbody.innerHTML = events.map(ev => {
-        let evBadge = 'badge-blue';
-        if (ev.event_type === 'REVOKED' || ev.event_type === 'EXPIRED') evBadge = 'badge-danger';
-        else if (ev.event_type === 'REFRESHED') evBadge = 'badge-warning';
-        else if (ev.event_type === 'ISSUED') evBadge = 'badge-success';
-
-        return `
-          <tr>
-            <td class="mono">#${ev.id}</td>
-            <td class="text-muted" style="font-size:0.78rem;">${new Date(ev.timestamp).toLocaleString()}</td>
-            <td><span class="badge ${evBadge}">${ev.event_type}</span></td>
-            <td class="mono bold" style="color: #fef08a;">${ev.jti}</td>
-            <td><strong>${ev.username || '—'}</strong></td>
-            <td class="mono text-muted">${ev.endpoint || '—'}</td>
-            <td>${ev.ip_address || '127.0.0.1'}</td>
-            <td class="text-muted" style="font-size:0.75rem;" title="${ev.user_agent || ''}">${(ev.user_agent || '').substring(0, 25)}...</td>
-          </tr>
-        `;
-      }).join('');
-    } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Error: ${e.message}</td></tr>`;
-    }
-  }
-
-  /* ================= 7. PRODUCTS CATALOG ================= */
+  /* ================= 4. PRODUCTS CATALOG ================= */
   async function loadProducts() {
     const tbody = document.getElementById('productsBody');
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Loading operational products catalog from business.db...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Loading product catalog...</td></tr>`;
 
     try {
       const res = await apiRequest('/api/products');
@@ -694,7 +609,7 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
       document.getElementById('prodStock').value = prod.stock;
       document.getElementById('prodDescription').value = prod.description || '';
     } else {
-      document.getElementById('productModalTitle').textContent = 'Add Product (business.db)';
+      document.getElementById('productModalTitle').textContent = 'Add Product';
       document.getElementById('productId').value = '';
     }
 
@@ -729,7 +644,7 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
         return;
       }
 
-      showToast(`Product ${id ? 'updated' : 'created'} & audited in audit.db!`, 'success');
+      showToast(`Product ${id ? 'updated' : 'created'} and recorded in audit trail!`, 'success');
       closeProductModal();
       loadProducts();
       loadComplianceStats();
@@ -750,7 +665,7 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
         return;
       }
 
-      showToast('Product deleted and logged in forensic audit trail!', 'success');
+      showToast('Product deleted and logged in activity trail!', 'success');
       loadProducts();
       loadComplianceStats();
     } catch (err) {
@@ -758,10 +673,10 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
     }
   }
 
-  /* ================= 8. TASKS WORKSPACE ================= */
+  /* ================= 5. TASKS WORKSPACE ================= */
   async function loadTasks() {
     const tbody = document.getElementById('tasksBody');
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Loading tasks from business.db...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Loading tasks...</td></tr>`;
 
     try {
       const res = await apiRequest('/api/tasks');
@@ -778,8 +693,8 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
         return;
       }
 
-      const role = state.currentUser.role;
-      const isAuditor = role === 'auditor';
+      const currentUsername = state.currentUser ? state.currentUser.username : '';
+      const isAuditor = state.currentUser && state.currentUser.role === 'auditor';
 
       tbody.innerHTML = tasks.map(task => {
         let priBadge = 'badge-muted';
@@ -790,6 +705,9 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
         let statusBadge = 'badge-muted';
         if (task.status === 'completed') statusBadge = 'badge-success';
         else if (task.status === 'in_progress') statusBadge = 'badge-purple';
+
+        // Compliance Rule: Nobody (including Admin) can edit tasks created by other users
+        const isOwner = task.created_by === currentUsername;
 
         return `
           <tr>
@@ -805,11 +723,15 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
             <td>
               ${isAuditor ? `
                 <span class="badge badge-purple">Read-Only</span>
-              ` : `
+              ` : isOwner ? `
                 <div style="display:flex; gap:0.4rem;">
                   <button class="btn btn-sm btn-outline" onclick='AuditProApp.openTaskModal(${JSON.stringify(task)})'>Edit</button>
                   <button class="btn btn-sm btn-outline-danger" onclick="AuditProApp.deleteTask('${task.id}')">Delete</button>
                 </div>
+              ` : `
+                <span class="badge badge-muted" title="Protected: Tasks created by '${escapeHtml(task.created_by)}' cannot be modified or deleted by other users or administrators">
+                  🔒 Created by ${escapeHtml(task.created_by)}
+                </span>
               `}
             </td>
           </tr>
@@ -824,7 +746,8 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
     const form = document.getElementById('taskForm');
     form.reset();
 
-    const role = state.currentUser.role;
+    const role = state.currentUser ? state.currentUser.role : 'user';
+    const currentUsername = state.currentUser ? state.currentUser.username : '';
     const assigneeGroup = document.getElementById('taskAssigneeGroup');
 
     // If standard user, hide reassign dropdown (users only work on their own tasks)
@@ -835,6 +758,12 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
     }
 
     if (task) {
+      // Prevent non-creator (even admin) from editing someone else's task
+      if (task.created_by !== currentUsername) {
+        showToast(`Protected: You cannot edit tasks created by ${task.created_by}`, 'warning');
+        return;
+      }
+
       document.getElementById('taskModalTitle').textContent = `Edit Task`;
       document.getElementById('taskId').value = task.id;
       document.getElementById('taskTitle').value = task.title;
@@ -908,12 +837,12 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
     }
   }
 
-  /* ================= 9. IDENTITY & USER DIRECTORY (ADMIN ONLY) ================= */
+  /* ================= 6. USER ACCOUNTS & DIRECTORY (ADMIN ONLY) ================= */
   async function loadUsers() {
-    if (state.currentUser.role !== 'admin') return;
+    if (!state.currentUser || state.currentUser.role !== 'admin') return;
 
     const tbody = document.getElementById('usersBody');
-    tbody.innerHTML = `<tr><td colspan="5" class="text-center">Loading users from auth.db...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="text-center">Loading user accounts...</td></tr>`;
 
     try {
       const res = await apiRequest('/api/users');
@@ -957,7 +886,7 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
     form.reset();
 
     if (user) {
-      document.getElementById('userModalTitle').textContent = `Edit Identity: ${user.username}`;
+      document.getElementById('userModalTitle').textContent = `Edit User: ${user.username}`;
       document.getElementById('userId').value = user.id;
       document.getElementById('userUsername').value = user.username;
       document.getElementById('userUsername').disabled = true; // username immutable
@@ -966,7 +895,7 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
       document.getElementById('userPasswordNote').textContent = '(Leave blank to keep existing password)';
       document.getElementById('userPassword').required = false;
     } else {
-      document.getElementById('userModalTitle').textContent = 'Provision Identity (auth.db)';
+      document.getElementById('userModalTitle').textContent = 'Provision User Account';
       document.getElementById('userId').value = '';
       document.getElementById('userUsername').disabled = false;
       document.getElementById('userPasswordNote').textContent = '(Required)';
@@ -1031,7 +960,177 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
     }
   }
 
-  /* ================= 10. AUTHENTICATION & QUICK SWITCHING ================= */
+  /* ================= 7. USER FOOTPRINTS & PRESENCE AUDITING ================= */
+  async function loadFootprintsTab() {
+    if (!state.currentUser || state.currentUser.role === 'user') return;
+    await Promise.all([
+      loadUserSessions(),
+      loadFootprintsStream(),
+      loadComplianceStats()
+    ]);
+  }
+
+  async function loadUserSessions() {
+    const tbody = document.getElementById('userSessionsBody');
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Querying active sessions and dwell times...</td></tr>`;
+
+    try {
+      const res = await apiRequest('/api/audit/sessions?limit=50');
+      if (!res.ok) throw new Error('Failed to load user sessions');
+      const data = await res.json();
+      const sessions = data.sessions || [];
+
+      if (sessions.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">No session dwell times recorded yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = sessions.map(s => {
+        const isOnline = s.status === 'ACTIVE';
+        const isLoggedOut = s.status === 'LOGGED_OUT';
+        const statusBadge = isOnline ? 'badge-success' : isLoggedOut ? 'badge-blue' : 'badge-warning';
+        const statusText = isOnline ? '🟢 Logged In (Active)' : isLoggedOut ? '⚪ Logged Out' : '⏱️ Timed Out';
+        const roleEmoji = s.role === 'admin' ? '👑' : s.role === 'auditor' ? '🔍' : '👤';
+
+        return `
+          <tr>
+            <td>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div class="user-avatar" style="width:26px; height:26px; font-size:0.7rem;">${(s.username || 'U').substring(0, 2).toUpperCase()}</div>
+                <strong>${escapeHtml(s.username)}</strong>
+              </div>
+            </td>
+            <td><span class="role-pill" style="font-size:0.72rem;">${roleEmoji} ${(s.role || '').toUpperCase()}</span></td>
+            <td><span class="badge ${statusBadge}">${statusText}</span></td>
+            <td class="text-muted mono" style="font-size:0.78rem;">${new Date(s.login_time).toLocaleTimeString()}</td>
+            <td class="text-muted mono" style="font-size:0.78rem;">${new Date(s.last_active).toLocaleTimeString()}</td>
+            <td>
+              <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem; border: 1px solid rgba(16, 185, 129, 0.3);">
+                ⏱️ ${s.formatted_duration || '0s'}
+              </span>
+            </td>
+            <td><span class="tag">${escapeHtml(s.last_view || 'Dashboard')}</span></td>
+          </tr>
+        `;
+      }).join('');
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Error: ${escapeHtml(e.message)}</td></tr>`;
+    }
+  }
+
+  async function loadFootprintsStream() {
+    const tbody = document.getElementById('footprintsStreamBody');
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Querying recorded activity...</td></tr>`;
+
+    try {
+      const params = new URLSearchParams({
+        page: state.footprintPagination.page,
+        limit: state.footprintPagination.limit,
+        username: state.footprintFilters.actor || '',
+        search: state.footprintFilters.search || ''
+      });
+
+      if (state.footprintFilters.type) {
+        params.append('event', state.footprintFilters.type);
+      }
+
+      const res = await apiRequest(`/api/audit/logs?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to load activity footprints');
+      const data = await res.json();
+      const logs = data.logs || [];
+
+      // Update pagination controls
+      state.footprintPagination.total = data.total || 0;
+      state.footprintPagination.totalPages = data.totalPages || 1;
+
+      const pageInfo = document.getElementById('footprintsPageInfo');
+      if (pageInfo) {
+        pageInfo.textContent = `Showing page ${data.page} of ${data.totalPages || 1} (${data.total || 0} activities recorded)`;
+      }
+      const prevBtn = document.getElementById('btnFootprintPrev');
+      if (prevBtn) prevBtn.disabled = data.page <= 1;
+      const nextBtn = document.getElementById('btnFootprintNext');
+      if (nextBtn) nextBtn.disabled = data.page >= (data.totalPages || 1);
+
+      if (logs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">No activity footprints matching filters.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = logs.map(l => {
+        let categoryBadge = '<span class="footprint-badge view">👁️ VIEW SCREEN</span>';
+        if (l.event.startsWith('VIEW_')) {
+          categoryBadge = '<span class="footprint-badge view">👁️ VIEW SCREEN</span>';
+        } else if (l.event.includes('CREATE')) {
+          categoryBadge = '<span class="footprint-badge mutation">➕ CREATE ITEM</span>';
+        } else if (l.event.includes('UPDATE')) {
+          categoryBadge = '<span class="footprint-badge mutation">✏️ UPDATE ITEM</span>';
+        } else if (l.event.includes('DELETE')) {
+          categoryBadge = '<span class="footprint-badge mutation" style="border-color: rgba(239, 68, 68, 0.4); color: #f87171;">🗑️ DELETE ITEM</span>';
+        } else if (l.event.includes('LOGIN') || l.event.includes('LOGOUT')) {
+          categoryBadge = '<span class="footprint-badge auth">🔐 SIGN IN / OUT</span>';
+        } else if (l.event.includes('DENIED')) {
+          categoryBadge = '<span class="footprint-badge security" style="border-color: rgba(239, 68, 68, 0.4); color: #f87171;">🚫 ACCESS BLOCKED</span>';
+        } else {
+          categoryBadge = '<span class="footprint-badge security">🛡️ SYSTEM AUDIT</span>';
+        }
+
+        return `
+          <tr class="clickable-row" onclick="AuditProApp.inspectLogDiff(${l.id})" title="Click to view full details">
+            <td class="mono">#${l.id}</td>
+            <td class="text-muted mono" style="font-size:0.78rem;">${new Date(l.timestamp).toLocaleTimeString()}</td>
+            <td><strong>${escapeHtml(l.username || 'system')}</strong> <span class="text-muted" style="font-size:0.75rem;">(${l.role || ''})</span></td>
+            <td>${categoryBadge}</td>
+            <td>${escapeHtml(l.action || '')}</td>
+            <td><span class="tag">${escapeHtml(l.entity_type || '—')}</span></td>
+            <td>
+              <button class="btn btn-sm btn-outline-accent" onclick="event.stopPropagation(); AuditProApp.inspectLogDiff(${l.id})">
+                Inspect Details
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Error: ${escapeHtml(e.message)}</td></tr>`;
+    }
+  }
+
+  function changeFootprintPage(delta) {
+    state.footprintPagination.page = Math.max(1, state.footprintPagination.page + delta);
+    loadFootprintsStream();
+  }
+
+  function applyFootprintFilters() {
+    state.footprintFilters.actor = document.getElementById('filterFootprintActor').value;
+    state.footprintFilters.type = document.getElementById('filterFootprintType').value;
+    state.footprintPagination.page = 1;
+    loadFootprintsStream();
+  }
+
+  function resetFootprintFilters() {
+    document.getElementById('filterFootprintActor').value = '';
+    document.getElementById('filterFootprintType').value = '';
+    document.getElementById('searchFootprint').value = '';
+    state.footprintFilters.actor = '';
+    state.footprintFilters.type = '';
+    state.footprintFilters.search = '';
+    state.footprintPagination.page = 1;
+    loadFootprintsStream();
+  }
+
+  function debounceFootprintSearch() {
+    clearTimeout(state.searchDebounceTimer);
+    state.searchDebounceTimer = setTimeout(() => {
+      state.footprintFilters.search = document.getElementById('searchFootprint').value;
+      state.footprintPagination.page = 1;
+      loadFootprintsStream();
+    }, 300);
+  }
+
+  /* ================= 8. AUTHENTICATION & QUICK SWITCHING ================= */
   async function handleLogin(e) {
     e.preventDefault();
     const username = document.getElementById('loginUsername').value.trim();
@@ -1059,7 +1158,11 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
       localStorage.setItem('auditpro_refresh_token', state.refreshToken);
       localStorage.setItem('auditpro_jti', state.currentJti);
 
-      showToast(`Welcome back, ${data.user.full_name}! (JTI logged)`, 'success');
+      state.sessionStartTime = Date.now();
+      localStorage.setItem('auditpro_session_start', state.sessionStartTime);
+      startSessionTimers();
+
+      showToast(`Welcome back, ${data.user.full_name}!`, 'success');
       applyRoleExperience();
       loadDashboardData();
     } catch (err) {
@@ -1096,6 +1199,10 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
       localStorage.setItem('auditpro_refresh_token', state.refreshToken);
       localStorage.setItem('auditpro_jti', state.currentJti);
 
+      state.sessionStartTime = Date.now();
+      localStorage.setItem('auditpro_session_start', state.sessionStartTime);
+      startSessionTimers();
+
       if (!silent) {
         showToast(`Switched context to ${data.user.role.toUpperCase()} (${data.user.username})`, 'success');
       }
@@ -1108,17 +1215,26 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
   }
 
   async function logout(callServer = true) {
+    const elapsedSec = state.sessionStartTime ? Math.max(0, Math.floor((Date.now() - state.sessionStartTime) / 1000)) : 0;
+    const mins = Math.floor(elapsedSec / 60);
+    const secs = elapsedSec % 60;
+    const formattedStay = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
     if (callServer && state.accessToken) {
       try {
         await apiRequest('/api/auth/logout', {
           method: 'POST',
-          body: JSON.stringify({ refreshToken: state.refreshToken })
+          body: JSON.stringify({ 
+            refreshToken: state.refreshToken,
+            durationSeconds: elapsedSec 
+          })
         });
       } catch (e) {
         // ignore logout network errors
       }
     }
 
+    stopSessionTimers();
     state.currentUser = null;
     state.accessToken = null;
     state.refreshToken = null;
@@ -1129,7 +1245,7 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
     localStorage.removeItem('auditpro_jti');
 
     document.getElementById('authModalOverlay').style.display = 'flex';
-    showToast('Signed out of session', 'warning');
+    showToast(`Signed out of session. Total time stayed: ${formattedStay}`, 'warning');
   }
 
   function escapeHtml(str) {
@@ -1149,17 +1265,16 @@ Audit DB Logged:      IMMUTABILITY_TAMPER_ATTEMPT recorded with status BLOCKED
   return {
     init,
     switchTab,
-    applyFilters,
-    debouncedFilter,
-    resetFilters,
-    changePage,
     inspectLogDiff,
     closeDiffModal,
     exportAudit,
-    openImmutabilityModal,
-    closeImmutabilityModal,
-    runTamperTest,
-    loadJwtEvents,
+    loadFootprintsTab,
+    loadUserSessions,
+    loadFootprintsStream,
+    changeFootprintPage,
+    applyFootprintFilters,
+    resetFootprintFilters,
+    debounceFootprintSearch,
     openProductModal,
     closeProductModal,
     handleProductSubmit,

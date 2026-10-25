@@ -128,8 +128,8 @@ router.put('/:id', (req, res) => {
     return res.status(404).json({ error: 'Task not found' });
   }
 
-  // Least-privilege isolation: Regular user can only modify their own task
-  if (req.user.role === 'user' && beforeTask.assigned_to !== req.user.username && beforeTask.created_by !== req.user.username) {
+  // Compliance Rule: Nobody (including Admin) can edit tasks created by other users
+  if (beforeTask.created_by !== req.user.username) {
     auditDb.logAudit({
       event: 'ACCESS_DENIED',
       user_id: req.user.sub,
@@ -137,14 +137,14 @@ router.put('/:id', (req, res) => {
       role: req.user.role,
       ip_address: ip,
       user_agent: userAgent,
-      action: `User '${req.user.username}' attempted unauthorized modification of task ${id} assigned to '${beforeTask.assigned_to}'`,
+      action: `${req.user.role.toUpperCase()} '${req.user.username}' attempted unauthorized modification of task ${id} created by '${beforeTask.created_by}'`,
       entity_type: 'task',
       entity_id: id,
       jti: req.user.jti,
       status: 'DENIED'
     });
 
-    return res.status(403).json({ error: 'You are only authorized to modify your own tasks' });
+    return res.status(403).json({ error: `Protected: You cannot edit tasks created by other users ('${beforeTask.created_by}').` });
   }
 
   const updatedTask = businessDb.updateTask(id, req.body);
@@ -188,7 +188,8 @@ router.delete('/:id', (req, res) => {
     return res.status(404).json({ error: 'Task not found' });
   }
 
-  if (req.user.role === 'user' && beforeTask.created_by !== req.user.username) {
+  // Compliance Rule: Nobody (including Admin) can delete tasks created by other users
+  if (beforeTask.created_by !== req.user.username) {
     auditDb.logAudit({
       event: 'ACCESS_DENIED',
       user_id: req.user.sub,
@@ -196,13 +197,13 @@ router.delete('/:id', (req, res) => {
       role: req.user.role,
       ip_address: ip,
       user_agent: userAgent,
-      action: `User '${req.user.username}' attempted unauthorized deletion of task ${id}`,
+      action: `${req.user.role.toUpperCase()} '${req.user.username}' attempted unauthorized deletion of task ${id} created by '${beforeTask.created_by}'`,
       entity_type: 'task',
       entity_id: id,
       jti: req.user.jti,
       status: 'DENIED'
     });
-    return res.status(403).json({ error: 'You can only delete tasks you created' });
+    return res.status(403).json({ error: `Protected: You cannot delete tasks created by other users ('${beforeTask.created_by}').` });
   }
 
   const deleted = businessDb.deleteTask(id);

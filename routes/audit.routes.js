@@ -4,9 +4,57 @@ const auditDb = require('../db/audit');
 const verifyJWT = require('../middleware/verifyJWT');
 const requireRole = require('../middleware/requireRole');
 
-// Audit routes are restricted to Admin and Auditor only
+// All audit endpoints require valid JWT authentication
 router.use(verifyJWT);
+
+/**
+ * POST /api/audit/view
+ * Record an uneditable view footprint (e.g. user viewed catalog, tasks, reports, etc.)
+ * Available to ALL authenticated users so all footprints are captured
+ */
+router.post('/view', (req, res) => {
+  const { viewName, entityType, entityId, durationInView } = req.body;
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+  const userAgent = req.headers['user-agent'] || 'Unknown-Client';
+
+  const sanitizedView = (viewName || 'Dashboard').trim();
+  const eventName = `VIEW_${sanitizedView.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+
+  const result = auditDb.logAudit({
+    event: eventName,
+    user_id: req.user.sub,
+    username: req.user.username,
+    role: req.user.role,
+    ip_address: ip,
+    user_agent: userAgent,
+    action: `User '${req.user.username}' viewed ${sanitizedView}${entityId ? ` (${entityId})` : ''}`,
+    entity_type: entityType || 'view_footprint',
+    entity_id: entityId ? String(entityId) : sanitizedView,
+    jti: req.user.jti,
+    status: 'SUCCESS',
+    metadata: {
+      section: sanitizedView,
+      duration_in_view_seconds: durationInView || 0,
+      footprint_type: 'VIEW',
+      immutable: true
+    }
+  });
+
+  return res.json({ success: true, logId: result.id });
+});
+
+// Forensic inspection routes are restricted to Admin and Auditor only
 router.use(requireRole('admin', 'auditor'));
+
+/**
+ * GET /api/audit/sessions
+ * Returns user sessions showing how long each user has stayed in the system
+ */
+router.get('/sessions', (req, res) => {
+  const limit = req.query.limit ? parseInt(req.query.limit) : 50;
+  const sessions = auditDb.getUserSessions({ limit });
+  return res.json({ sessions });
+});
 
 /**
  * GET /api/audit/logs
@@ -107,7 +155,7 @@ router.get('/export/csv', (req, res) => {
   });
 
   // Build CSV content
-  const headers = ['ID', 'Timestamp', 'Event', 'Username', 'Role', 'IP_Address', 'Status', 'Action', 'Entity_Type', 'Entity_ID', 'JWT_JTI'];
+  const headers = ['ID', 'Timestamp', 'Event', 'Username', 'Role', 'IP_Address', 'Status', 'Action', 'Entity_Type', 'Entity_ID'];
   const csvLines = [headers.join(',')];
 
   for (const log of logs) {
@@ -121,8 +169,7 @@ router.get('/export/csv', (req, res) => {
       `"${log.status || ''}"`,
       `"${(log.action || '').replace(/"/g, '""')}"`,
       `"${log.entity_type || ''}"`,
-      `"${log.entity_id || ''}"`,
-      `"${log.jti || ''}"`
+      `"${log.entity_id || ''}"`
     ];
     csvLines.push(row.join(','));
   }

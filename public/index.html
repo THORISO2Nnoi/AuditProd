@@ -30,26 +30,7 @@
         </div>
         <div class="logo-text">
           <span class="logo-title">Audit<span class="accent-text">Pro</span></span>
-          <span class="logo-badge">IMMUTABLE 3-DB</span>
-        </div>
-      </div>
-
-      <!-- 3-Database Live Architecture Status Chips -->
-      <div class="db-status-bar" id="dbStatusBar">
-        <div class="db-chip" title="Identity & Token Isolation (auth.db)">
-          <span class="pulse-dot green"></span>
-          <span class="chip-label">auth.db</span>
-          <span class="chip-status">ISOLATED</span>
-        </div>
-        <div class="db-chip" title="Products & Tasks Operational Data (business.db)">
-          <span class="pulse-dot green"></span>
-          <span class="chip-label">business.db</span>
-          <span class="chip-status">OPERATIONAL</span>
-        </div>
-        <div class="db-chip active-triggers" title="Forensic Append-Only Audit Trail (audit.db)">
-          <span class="pulse-dot purple"></span>
-          <span class="chip-label">audit.db</span>
-          <span class="chip-status">TRIGGERS LOCKED</span>
+          <span class="logo-badge">ENTERPRISE AUDIT</span>
         </div>
       </div>
     </div>
@@ -79,6 +60,12 @@
           <span class="user-name" id="userNameLabel">System Administrator</span>
           <span class="role-pill" id="userRolePill">👑 ADMIN</span>
         </div>
+        <!-- Live Session Timer Chip -->
+        <div class="session-timer-chip" id="sessionTimerChip" title="Active dwell time in this session (heartbeat synchronized)">
+          <span class="timer-dot"></span>
+          <span class="timer-label">In System:</span>
+          <strong class="timer-time" id="sessionTimerDisplay">00:00</strong>
+        </div>
         <button class="btn-icon" id="btnLogout" onclick="AuditProApp.logout()" title="Sign Out">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -101,7 +88,7 @@
           </svg>
         </div>
         <h2>Sign in to AuditPro</h2>
-        <p>Demonstrating compliance with 3 isolated databases & immutable audit trails</p>
+        <p>Enterprise audit logging & user presence tracking platform</p>
       </div>
 
       <form id="loginForm" onsubmit="AuditProApp.handleLogin(event)">
@@ -114,7 +101,7 @@
           <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" required autocomplete="current-password">
         </div>
         <button type="submit" class="btn btn-primary full-width" id="btnSubmitLogin">
-          Authenticate with JTI Tracking
+          Sign In to Account
         </button>
       </form>
 
@@ -147,54 +134,40 @@
         <div class="banner-icon-badge" id="bannerIconBadge">👑</div>
         <div class="banner-info">
           <h1 id="bannerTitle">Admin Control Center</h1>
-          <p id="bannerSubtitle">Full administrative orchestration across Auth DB, Business DB, and Audit Forensics</p>
+          <p id="bannerSubtitle">Complete operational oversight, user presence tracking, and immutable activity auditing</p>
         </div>
-      </div>
-      <div class="banner-right">
-        <div class="jti-token-badge" id="currentJtiBadge" title="Current session JWT Identifier">
-          <span class="jti-icon">🔑 JTI</span>
-          <span class="jti-hash" id="sessionJtiDisplay">Evaluating...</span>
-        </div>
-        <button class="btn btn-sm btn-outline-danger" id="btnTriggerTamper" onclick="AuditProApp.openImmutabilityModal()">
-          🛡️ Test Immutability Defense
-        </button>
       </div>
     </div>
 
     <!-- Navigation Tabs (Role Aware) -->
     <nav class="role-tabs-bar" id="roleTabsBar" role="tablist">
-      <!-- Admin & Auditor: Compliance Stats -->
+      <!-- Admin & Auditor: System Overview -->
       <button class="tab-btn active" id="tabCompliance" role="tab" aria-selected="true" onclick="AuditProApp.switchTab('compliance')">
-        📊 Compliance & Health
+        📊 System Overview
       </button>
 
-      <!-- Admin & Auditor: Audit Logs -->
-      <button class="tab-btn" id="tabAuditLogs" role="tab" aria-selected="false" onclick="AuditProApp.switchTab('auditLogs')">
-        📜 Immutable Audit Trail
+      <!-- Admin & Auditor: Unified User Footprints & Audit Trail -->
+      <button class="tab-btn" id="tabFootprints" role="tab" aria-selected="false" onclick="AuditProApp.switchTab('footprints')">
+        👣 User Footprints & Audit Trail
       </button>
 
-      <!-- Admin & Auditor: JWT Forensics -->
-      <button class="tab-btn" id="tabJwtForensics" role="tab" aria-selected="false" onclick="AuditProApp.switchTab('jwtForensics')">
-        🔐 Token & JTI Events
-      </button>
-
-      <!-- All Roles: Products (Admin: Edit, Auditor: Read-Only, User: Catalog) -->
+      <!-- All Roles: Products Catalog -->
       <button class="tab-btn" id="tabProducts" role="tab" aria-selected="false" onclick="AuditProApp.switchTab('products')">
         📦 Products Catalog
       </button>
 
-      <!-- All Roles: Tasks (User: Own tasks only, Admin: All, Auditor: Read-Only) -->
+      <!-- All Roles: Tasks -->
       <button class="tab-btn" id="tabTasks" role="tab" aria-selected="false" onclick="AuditProApp.switchTab('tasks')">
         📋 <span id="tasksTabTitle">Task Workspace</span>
       </button>
 
-      <!-- Admin Only: User Management -->
+      <!-- Admin Only: User Accounts -->
       <button class="tab-btn" id="tabUsers" role="tab" aria-selected="false" onclick="AuditProApp.switchTab('users')">
-        👥 Identity & Users (Auth DB)
+        👥 User Accounts
       </button>
     </nav>
 
-    <!-- TAB 1: COMPLIANCE & HEALTH METRICS -->
+    <!-- TAB 1: SYSTEM OVERVIEW & METRICS -->
     <section class="tab-pane active" id="paneCompliance" role="tabpanel">
       <!-- Overview KPI Cards -->
       <div class="metrics-grid">
@@ -209,7 +182,7 @@
 
         <div class="metric-card">
           <div class="metric-header">
-            <span class="metric-title">Total Audit Logs</span>
+            <span class="metric-title">Total Activities Logged</span>
             <span class="metric-icon">📑</span>
           </div>
           <div class="metric-value" id="metricTotalLogs">0</div>
@@ -218,11 +191,29 @@
 
         <div class="metric-card">
           <div class="metric-header">
+            <span class="metric-title">Active Users Online</span>
+            <span class="pulse-dot green"></span>
+          </div>
+          <div class="metric-value" id="overviewActiveUsers">0</div>
+          <div class="metric-sub">Currently active in system</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-title">Average Time Spent</span>
+            <span class="metric-icon">⏱️</span>
+          </div>
+          <div class="metric-value" id="overviewAvgStay">0s</div>
+          <div class="metric-sub">Average dwell time per session</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
             <span class="metric-title">Access Denials</span>
             <span class="metric-badge red" id="metricDeniedCount">0</span>
           </div>
           <div class="metric-value" id="metricAccessDenied">0</div>
-          <div class="metric-sub">Role permission violations intercepted</div>
+          <div class="metric-sub">Unauthorized attempts intercepted</div>
         </div>
 
         <div class="metric-card">
@@ -233,54 +224,36 @@
           <div class="metric-value" id="metricFailedLogins">0</div>
           <div class="metric-sub">Bad credentials tracked with IP</div>
         </div>
-
-        <div class="metric-card">
-          <div class="metric-header">
-            <span class="metric-title">Tracked JTIs</span>
-            <span class="metric-icon">🔑</span>
-          </div>
-          <div class="metric-value" id="metricTrackedJtis">0</div>
-          <div class="metric-sub">Deterministic token identities</div>
-        </div>
-
-        <div class="metric-card">
-          <div class="metric-header">
-            <span class="metric-title">Tamper Attempts Blocked</span>
-            <span class="metric-badge purple" id="metricBlockedBadge">Active</span>
-          </div>
-          <div class="metric-value" id="metricTamperBlocked">0</div>
-          <div class="metric-sub">Rejected by SQLite triggers</div>
-        </div>
       </div>
 
       <!-- Compliance Proofs & Architecture Showcase -->
       <div class="compliance-pillars-grid">
         <div class="pillar-card">
-          <div class="pillar-icon">🗄️</div>
-          <h3>3 Isolated Databases</h3>
-          <p>Identity (auth.db), Operations (business.db), and Forensics (audit.db) run on dedicated connection handles with zero cross-database contamination.</p>
+          <div class="pillar-icon">🛡️</div>
+          <h3>Least-Privilege Isolation</h3>
+          <p>Users and administrators can only edit their own work. Tasks created by other users are strictly protected from modification or deletion.</p>
           <div class="db-proof-links">
-            <span class="tag">auth.db: users, refresh_tokens</span>
-            <span class="tag">business.db: products, tasks</span>
-            <span class="tag">audit.db: audit_logs, jwt_events</span>
+            <span class="tag">Zero Cross-User Tampering</span>
+            <span class="tag">Creator-Only Modification</span>
           </div>
         </div>
 
         <div class="pillar-card">
           <div class="pillar-icon">🔒</div>
-          <h3>DB-Level Immutability</h3>
-          <p>Native SQLite triggers abort any <code>UPDATE</code> or <code>DELETE</code> with a strict SQL exception. Tampering is mathematically impossible even with raw CLI access.</p>
-          <button class="btn btn-sm btn-outline-purple" onclick="AuditProApp.openImmutabilityModal()">
-            Execute Live Tamper Test
-          </button>
+          <h3>Append-Only Audit Trail</h3>
+          <p>Every login, screen view, and data modification creates an unalterable compliance footprint. History cannot be modified or wiped out.</p>
+          <div class="db-proof-links">
+            <span class="tag">Permanent Footprints</span>
+            <span class="tag">Write-Once Ledger</span>
+          </div>
         </div>
 
         <div class="pillar-card">
-          <div class="pillar-icon">🔍</div>
-          <h3>JTI Traceability & Diffing</h3>
-          <p>Every operational mutation is signed with the user's ephemeral JWT ID and records exact JSON before/after state with yellow change highlights.</p>
-          <button class="btn btn-sm btn-outline-accent" onclick="AuditProApp.switchTab('auditLogs')">
-            Inspect Audit Trail
+          <div class="pillar-icon">👁️</div>
+          <h3>Full Presence & View Auditing</h3>
+          <p>Monitors who is currently logged in, how long they stay, and what they do or inspect—including page and screen view history.</p>
+          <button class="btn btn-sm btn-outline-accent" onclick="AuditProApp.switchTab('footprints')">
+            Open User Footprints & Trail
           </button>
         </div>
       </div>
@@ -299,7 +272,7 @@
           </div>
           <div class="framework-row">
             <span class="fw-name">HIPAA § 164.312(b)</span>
-            <span class="fw-desc">Hardware/software audit controls recording activity in systems containing ePHI</span>
+            <span class="fw-desc">Hardware/software audit controls recording activity across the application</span>
             <span class="fw-status badge-success">COMPLIANT</span>
           </div>
           <div class="framework-row">
@@ -316,33 +289,104 @@
       </div>
     </section>
 
-    <!-- TAB 2: AUDIT LOGS EXPLORER -->
-    <section class="tab-pane" id="paneAuditLogs" role="tabpanel">
+    <!-- UNIFIED TAB: USER FOOTPRINTS & AUDIT TRAIL -->
+    <section class="tab-pane" id="paneFootprints" role="tabpanel">
+      <!-- Session & Activity KPI Metrics -->
+      <div class="metrics-grid mb-4">
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-title">Active Users Online</span>
+            <span class="pulse-dot green"></span>
+          </div>
+          <div class="metric-value" id="footprintsActiveUsers">0</div>
+          <div class="metric-sub">Users currently active in system</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-title">Average Time Spent</span>
+            <span class="metric-icon">⏱️</span>
+          </div>
+          <div class="metric-value" id="footprintsAvgStay">0s</div>
+          <div class="metric-sub">Dwell time per user session</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-title">Total Activities Recorded</span>
+            <span class="metric-icon">📑</span>
+          </div>
+          <div class="metric-value" id="footprintsTotalFootprints">0</div>
+          <div class="metric-sub">Views, creations, & updates</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-title">User Sign-ins Tracked</span>
+            <span class="metric-icon">👥</span>
+          </div>
+          <div class="metric-value" id="footprintsTotalSessions">0</div>
+          <div class="metric-sub">Session arrivals & departures</div>
+        </div>
+      </div>
+
+      <!-- SEPARATED PART 1: HOW LONG EACH USER SPENT IN THE SYSTEM & ONLINE PRESENCE -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <div>
+            <h2>⏱️ User Presence & Time Spent in System</h2>
+            <p class="text-muted">Tracks who is currently logged in, when they arrived, their last action, and how long they have spent in the system.</p>
+          </div>
+          <button class="btn btn-outline" onclick="AuditProApp.loadUserSessions()">🔄 Refresh Presence</button>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="userSessionsTable">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Current Status</th>
+                <th>Sign-in Time</th>
+                <th>Last Active Ping</th>
+                <th>⏱️ Time Spent in System</th>
+                <th>Current / Last Viewed Screen</th>
+              </tr>
+            </thead>
+            <tbody id="userSessionsBody">
+              <tr>
+                <td colspan="7" class="text-center">Loading user presence and time spent...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- SEPARATED PART 2: WHAT OTHER USERS DID & VIEWED (FULL ACTIVITY AUDIT TRAIL) -->
       <div class="card">
         <div class="card-header">
           <div>
-            <h2>Forensic Audit Trail</h2>
-            <p class="text-muted">Append-only audit ledger protected by SQL triggers. Click any row to inspect yellow-highlighted Before/After diffs.</p>
+            <h2>📜 What Users Did & Viewed (Complete Recorded Activity)</h2>
+            <p class="text-muted">Permanent chronological record of user activity across the application, including screen views, created items, status updates, and authentications.</p>
           </div>
           <div class="export-actions">
             <button class="btn btn-outline" id="btnExportCsv" onclick="AuditProApp.exportAudit('csv')">
-              📥 Export CSV (Audited)
+              📥 Export CSV
             </button>
             <button class="btn btn-outline" id="btnExportJson" onclick="AuditProApp.exportAudit('json')">
-              📥 Export JSON (Audited)
+              📥 Export JSON
+            </button>
+            <button class="btn btn-outline" onclick="AuditProApp.loadFootprintsStream()">
+              🔄 Refresh Activity
             </button>
           </div>
         </div>
 
-        <!-- Filter Controls -->
-        <div class="filters-bar">
+        <!-- Filter bar for Activities -->
+        <div class="filter-controls-grid mb-3">
           <div class="filter-item">
-            <label for="filterSearch">Search Query</label>
-            <input type="text" id="filterSearch" class="form-input" placeholder="Search action, JTI, or ID..." oninput="AuditProApp.debouncedFilter()">
-          </div>
-          <div class="filter-item">
-            <label for="filterUsername">User</label>
-            <select id="filterUsername" class="form-input" onchange="AuditProApp.applyFilters()">
+            <label for="filterFootprintActor">Filter by User</label>
+            <select id="filterFootprintActor" class="form-input" onchange="AuditProApp.applyFootprintFilters()">
               <option value="">All Users</option>
               <option value="admin">admin</option>
               <option value="auditor">auditor</option>
@@ -351,107 +395,52 @@
             </select>
           </div>
           <div class="filter-item">
-            <label for="filterEvent">Event Type</label>
-            <select id="filterEvent" class="form-input" onchange="AuditProApp.applyFilters()">
-              <option value="">All Events</option>
-              <option value="LOGIN">LOGIN</option>
-              <option value="LOGIN_FAILED">LOGIN_FAILED</option>
-              <option value="ACCESS_DENIED">ACCESS_DENIED</option>
-              <option value="CREATE_PRODUCT">CREATE_PRODUCT</option>
-              <option value="UPDATE_PRODUCT">UPDATE_PRODUCT</option>
-              <option value="DELETE_PRODUCT">DELETE_PRODUCT</option>
-              <option value="CREATE_TASK">CREATE_TASK</option>
-              <option value="UPDATE_TASK">UPDATE_TASK</option>
-              <option value="DELETE_TASK">DELETE_TASK</option>
-              <option value="CREATE_USER">CREATE_USER</option>
-              <option value="UPDATE_USER">UPDATE_USER</option>
-              <option value="DELETE_USER">DELETE_USER</option>
-              <option value="EXPORT_REPORT">EXPORT_REPORT</option>
-              <option value="IMMUTABILITY_TAMPER_ATTEMPT">IMMUTABILITY_TAMPER_ATTEMPT</option>
+            <label for="filterFootprintType">Activity Category</label>
+            <select id="filterFootprintType" class="form-input" onchange="AuditProApp.applyFootprintFilters()">
+              <option value="">All Activities (Views + Changes + Logins)</option>
+              <option value="VIEW_">👁️ Screen Views Only</option>
+              <option value="MUTATION">✏️ Data Changes (Creations & Updates)</option>
+              <option value="AUTH">🔐 Logins & Sign-outs</option>
             </select>
           </div>
           <div class="filter-item">
-            <label for="filterStatus">Status</label>
-            <select id="filterStatus" class="form-input" onchange="AuditProApp.applyFilters()">
-              <option value="">All Statuses</option>
-              <option value="SUCCESS">SUCCESS</option>
-              <option value="DENIED">DENIED</option>
-              <option value="FAILED">FAILED</option>
-              <option value="BLOCKED">BLOCKED</option>
-            </select>
+            <label for="searchFootprint">Search Activity</label>
+            <input type="text" id="searchFootprint" class="form-input" placeholder="Search task, product, action, or user..." oninput="AuditProApp.debounceFootprintSearch()">
           </div>
           <div class="filter-item">
             <label>&nbsp;</label>
-            <button class="btn btn-outline" onclick="AuditProApp.resetFilters()">Reset</button>
+            <button class="btn btn-outline" onclick="AuditProApp.resetFootprintFilters()">Reset</button>
           </div>
         </div>
 
-        <!-- Logs Table -->
         <div class="table-responsive">
-          <table class="data-table" id="auditLogsTable">
+          <table class="data-table" id="footprintsTable">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>#ID</th>
                 <th>Timestamp</th>
-                <th>Event</th>
-                <th>Actor</th>
-                <th>Status</th>
-                <th>Action & Impact</th>
-                <th>Entity</th>
-                <th>JTI (JWT Token ID)</th>
+                <th>User</th>
+                <th>Activity Type</th>
+                <th>What Was Done</th>
+                <th>Target / Screen</th>
                 <th>Details</th>
               </tr>
             </thead>
-            <tbody id="auditLogsBody">
+            <tbody id="footprintsStreamBody">
               <tr>
-                <td colspan="9" class="text-center">Loading audit records from audit.db...</td>
+                <td colspan="7" class="text-center">Loading recorded activity...</td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <!-- Pagination Controls -->
-        <div class="pagination-bar" id="paginationBar">
-          <span class="page-info" id="pageInfo">Showing page 1 of 1</span>
+        <div class="pagination-bar" id="footprintsPaginationBar">
+          <span class="page-info" id="footprintsPageInfo">Showing page 1</span>
           <div class="page-buttons">
-            <button class="btn btn-sm btn-outline" id="btnPrevPage" onclick="AuditProApp.changePage(-1)">Previous</button>
-            <button class="btn btn-sm btn-outline" id="btnNextPage" onclick="AuditProApp.changePage(1)">Next</button>
+            <button class="btn btn-sm btn-outline" id="btnFootprintPrev" onclick="AuditProApp.changeFootprintPage(-1)">Previous</button>
+            <button class="btn btn-sm btn-outline" id="btnFootprintNext" onclick="AuditProApp.changeFootprintPage(1)">Next</button>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- TAB 3: JWT FORENSICS -->
-    <section class="tab-pane" id="paneJwtForensics" role="tabpanel">
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <h2>JWT Token Lifecycle & JTI Forensics</h2>
-            <p class="text-muted">Trace deterministic token verification, rotation, expiration, and revocation in the isolated forensics store.</p>
-          </div>
-          <button class="btn btn-outline" onclick="AuditProApp.loadJwtEvents()">🔄 Refresh</button>
-        </div>
-
-        <div class="table-responsive">
-          <table class="data-table" id="jwtEventsTable">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Timestamp</th>
-                <th>Event</th>
-                <th>JTI (JWT Unique Identifier)</th>
-                <th>User</th>
-                <th>Endpoint</th>
-                <th>IP Address</th>
-                <th>Client User Agent</th>
-              </tr>
-            </thead>
-            <tbody id="jwtEventsBody">
-              <tr>
-                <td colspan="8" class="text-center">Loading JWT telemetry...</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
     </section>
@@ -466,8 +455,8 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <h2>Products Inventory (business.db)</h2>
-            <p class="text-muted">Operational catalog stored in <code>business.db</code>. Mutations generate cryptographic before/after snapshots.</p>
+            <h2>Products Inventory</h2>
+            <p class="text-muted">Operational product catalog. Modifications are automatically logged in the audit trail.</p>
           </div>
           <button class="btn btn-primary" id="btnCreateProduct" onclick="AuditProApp.openProductModal()">
             ➕ Add Product
@@ -501,14 +490,14 @@
     <section class="tab-pane" id="paneTasks" role="tabpanel">
       <!-- User Isolation Notice -->
       <div class="user-workspace-notice" id="userWorkspaceNotice" style="display: none;">
-        <span>👤 <strong>Identity-Isolated Workspace:</strong> You are viewing tasks strictly assigned to or authored by you. Zero access to cross-tenant or audit databases.</span>
+        <span>👤 <strong>Identity-Isolated Workspace:</strong> You are viewing tasks strictly assigned to or authored by you.</span>
       </div>
 
       <div class="card">
         <div class="card-header">
           <div>
-            <h2 id="tasksCardTitle">Operational Tasks (business.db)</h2>
-            <p class="text-muted" id="tasksCardSubtitle">Tasks assigned according to least-privilege principles.</p>
+            <h2 id="tasksCardTitle">System Tasks</h2>
+            <p class="text-muted" id="tasksCardSubtitle">Tasks across the system. Users and administrators can only edit or delete their own tasks.</p>
           </div>
           <button class="btn btn-primary" id="btnCreateTask" onclick="AuditProApp.openTaskModal()">
             ➕ Create Task
@@ -543,8 +532,8 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <h2>Identity & User Directory (auth.db)</h2>
-            <p class="text-muted">Physically isolated in <code>auth.db</code>. Passwords hashed with bcrypt; role updates trigger state diff audits.</p>
+            <h2>User Accounts & Directory</h2>
+            <p class="text-muted">User accounts, roles, and credential management. Activity is recorded in the audit trail.</p>
           </div>
           <button class="btn btn-primary" id="btnCreateUser" onclick="AuditProApp.openUserModal()">
             ➕ Provision User
@@ -564,7 +553,7 @@
             </thead>
             <tbody id="usersBody">
               <tr>
-                <td colspan="5" class="text-center">Loading users from auth.db...</td>
+                <td colspan="5" class="text-center">Loading user accounts...</td>
               </tr>
             </tbody>
           </table>
@@ -575,13 +564,13 @@
 
   <!-- ================= MODALS ================= -->
 
-  <!-- 1. BEFORE / AFTER YELLOW DIFF INSPECTOR MODAL -->
+  <!-- 1. BEFORE / AFTER DIFF INSPECTOR MODAL -->
   <div class="modal-overlay" id="diffModalOverlay" style="display: none;">
     <div class="modal-card modal-large" id="diffModal">
       <div class="modal-header">
         <div class="modal-title-group">
-          <span class="badge" id="diffModalEventBadge">UPDATE_PRODUCT</span>
-          <h3>Before / After Forensic Snapshot</h3>
+          <span class="badge" id="diffModalEventBadge">UPDATE</span>
+          <h3>Before / After Activity Snapshot</h3>
         </div>
         <button class="btn-icon" onclick="AuditProApp.closeDiffModal()">✕</button>
       </div>
@@ -605,112 +594,47 @@
             <span class="meta-label">IP Address:</span>
             <span class="meta-value" id="diffIp">192.168.1.100</span>
           </div>
-          <div class="diff-meta-item full-width">
-            <span class="meta-label">JWT Unique JTI:</span>
-            <span class="meta-value mono" id="diffJti">a1b2c3d4-e5f6-7890-abcd-ef1234567890</span>
-          </div>
-          <div class="diff-meta-item full-width">
-            <span class="meta-label">Action Description:</span>
-            <span class="meta-value bold" id="diffActionText">Adjusted price for Enterprise Firewall Appliance X9</span>
-          </div>
+        </div>
+
+        <div class="diff-action-banner" style="margin-top: 1rem; padding: 0.75rem 1rem; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle); border-radius: 8px;">
+          <span class="meta-label" style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted);">Action Recorded:</span>
+          <p id="diffActionText" style="margin: 0.25rem 0 0; font-weight: 600; color: var(--text-primary);"></p>
         </div>
 
         <!-- Visual Changed Fields Highlight Box -->
-        <div class="diff-highlights-container">
-          <div class="diff-header-bar">
-            <h4>Changed Fields (Yellow Highlight)</h4>
-            <span class="diff-count-badge" id="diffCountBadge">1 field changed</span>
+        <div class="diff-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.25rem; margin-bottom: 0.75rem;">
+          <h4 style="margin: 0; font-size: 0.95rem;">Field Deltas & Changes</h4>
+          <span class="badge badge-warning" id="diffCountBadge">0 fields modified</span>
+        </div>
+
+        <div class="diff-cards-container" id="diffCardsContainer">
+          <!-- Dynamically populated cards -->
+        </div>
+
+        <!-- Raw Snapshots -->
+        <div class="raw-snapshots-grid mt-4" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.25rem;">
+          <div class="snapshot-pane" style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 0.75rem;">
+            <div class="snapshot-header" style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.5rem;">State Before Action</div>
+            <pre class="json-code" id="rawBeforeJson" style="font-family: var(--font-mono); font-size: 0.78rem; overflow: auto; max-height: 200px; color: #94a3b8; margin: 0;">null</pre>
           </div>
-          <div class="diff-cards-grid" id="diffCardsContainer">
-            <!-- Dynamic diff items rendered here -->
-          </div>
-        </div>
-
-        <!-- Raw Snapshots Accordion -->
-        <div class="snapshots-tabs">
-          <div class="snapshot-box">
-            <div class="box-title">Before State (Previous)</div>
-            <pre class="json-code" id="rawBeforeJson">{}</pre>
-          </div>
-          <div class="snapshot-box">
-            <div class="box-title">After State (Committed)</div>
-            <pre class="json-code" id="rawAfterJson">{}</pre>
-          </div>
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button class="btn btn-outline" onclick="AuditProApp.closeDiffModal()">Close Inspector</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 2. IMMUTABILITY DEFENSE TEST MODAL -->
-  <div class="modal-overlay" id="immutabilityModalOverlay" style="display: none;">
-    <div class="modal-card modal-large" id="immutabilityModal">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="badge badge-purple">SQLITE ENGINE DEFENSE</span>
-          <h3>DB-Level Immutability Trigger Lab</h3>
-        </div>
-        <button class="btn-icon" onclick="AuditProApp.closeImmutabilityModal()">✕</button>
-      </div>
-
-      <div class="modal-body">
-        <div class="defense-explanation">
-          <p>
-            AuditPro guarantees compliance by enforcing immutability <strong>directly in the SQLite database engine</strong> via triggers.
-            Even if an attacker gains raw SQL execution access or invokes rogue queries, the database engine itself aborts the query immediately.
-          </p>
-        </div>
-
-        <div class="trigger-code-preview">
-          <div class="preview-title">SQL Triggers Active on <code>db/audit.db</code>:</div>
-          <pre class="sql-code">CREATE TRIGGER audit_logs_prevent_update
-BEFORE UPDATE ON audit_logs
-BEGIN
-  SELECT RAISE(ABORT, 'Audit logs are immutable: UPDATE operations are strictly prohibited by compliance policy.');
-END;
-
-CREATE TRIGGER audit_logs_prevent_delete
-BEFORE DELETE ON audit_logs
-BEGIN
-  SELECT RAISE(ABORT, 'Audit logs are immutable: DELETE operations are strictly prohibited by compliance policy.');
-END;</pre>
-        </div>
-
-        <div class="tamper-action-box">
-          <h4>Simulate Direct SQL Attack:</h4>
-          <div class="button-row">
-            <button class="btn btn-danger" id="btnSimulateUpdate" onclick="AuditProApp.runTamperTest('UPDATE')">
-              ⚠️ Run Rogue UPDATE Query
-            </button>
-            <button class="btn btn-danger" id="btnSimulateDelete" onclick="AuditProApp.runTamperTest('DELETE')">
-              ⚠️ Run Rogue DELETE Query
-            </button>
-          </div>
-        </div>
-
-        <!-- Live Trigger Response Console -->
-        <div class="terminal-console" id="tamperConsole">
-          <div class="console-title">Engine Defense Console:</div>
-          <div class="console-output" id="tamperConsoleOutput">
-            [System] Ready. Click an attack simulation button above to test database trigger rejection.
+          <div class="snapshot-pane" style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 0.75rem;">
+            <div class="snapshot-header" style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.5rem;">State After Action</div>
+            <pre class="json-code" id="rawAfterJson" style="font-family: var(--font-mono); font-size: 0.78rem; overflow: auto; max-height: 200px; color: #94a3b8; margin: 0;">null</pre>
           </div>
         </div>
       </div>
 
-      <div class="modal-footer">
-        <button class="btn btn-outline" onclick="AuditProApp.closeImmutabilityModal()">Close Lab</button>
+      <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border-subtle); display: flex; justify-content: flex-end;">
+        <button class="btn btn-outline" onclick="AuditProApp.closeDiffModal()">Close</button>
       </div>
     </div>
   </div>
 
-  <!-- 3. PRODUCT CREATE / EDIT MODAL -->
+  <!-- 3. PRODUCT MODAL -->
   <div class="modal-overlay" id="productModalOverlay" style="display: none;">
     <div class="modal-card" id="productModal">
       <div class="modal-header">
-        <h3 id="productModalTitle">Add Product (business.db)</h3>
+        <h3 id="productModalTitle">Add Product</h3>
         <button class="btn-icon" onclick="AuditProApp.closeProductModal()">✕</button>
       </div>
       <form id="productForm" onsubmit="AuditProApp.handleProductSubmit(event)">
@@ -814,7 +738,7 @@ END;</pre>
   <div class="modal-overlay" id="userModalOverlay" style="display: none;">
     <div class="modal-card" id="userModal">
       <div class="modal-header">
-        <h3 id="userModalTitle">Provision Identity (auth.db)</h3>
+        <h3 id="userModalTitle">Provision User Account</h3>
         <button class="btn-icon" onclick="AuditProApp.closeUserModal()">✕</button>
       </div>
       <form id="userForm" onsubmit="AuditProApp.handleUserSubmit(event)">

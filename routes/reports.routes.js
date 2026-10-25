@@ -13,6 +13,13 @@ router.use(requireRole('admin', 'auditor'));
  */
 router.get('/stats', (req, res) => {
   const stats = auditDb.getAuditStats();
+  const sessions = auditDb.getUserSessions({ limit: 100 });
+  const activeSessions = sessions.filter(s => s.status === 'ACTIVE');
+  const totalDuration = sessions.reduce((sum, s) => sum + (s.duration_seconds || 0), 0);
+  const avgDurationSeconds = sessions.length > 0 ? Math.round(totalDuration / sessions.length) : 0;
+  const avgMins = Math.floor(avgDurationSeconds / 60);
+  const avgSecs = avgDurationSeconds % 60;
+  const avgDurationFormatted = avgMins > 0 ? `${avgMins}m ${avgSecs}s` : `${avgSecs}s`;
 
   // Compliance metrics
   const total = stats.totalLogs || 1;
@@ -23,6 +30,12 @@ router.get('/stats', (req, res) => {
     ...stats,
     failureRate: `${failureRate}%`,
     healthScore: `${healthScore}%`,
+    sessionStats: {
+      totalSessions: sessions.length,
+      activeUsersCount: activeSessions.length,
+      averageStayFormatted: avgDurationFormatted,
+      averageStaySeconds: avgDurationSeconds
+    },
     frameworks: {
       sox: 'COMPLIANT (Section 404 Immutable Trail)',
       hipaa: 'COMPLIANT (§ 164.312(b) Audit Controls)',

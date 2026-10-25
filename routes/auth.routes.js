@@ -43,6 +43,16 @@ router.post('/login', (req, res) => {
   // Success scenario
   const tokens = generateTokenPair(user, { ip, userAgent, endpoint: '/api/auth/login' });
 
+  // Record active session footprint in audit DB
+  auditDb.recordSessionLogin({
+    jti: tokens.jti,
+    user_id: user.id,
+    username: user.username,
+    role: user.role,
+    ip_address: ip,
+    user_agent: userAgent
+  });
+
   auditDb.logAudit({
     event: 'LOGIN',
     user_id: user.id,
@@ -178,7 +188,7 @@ router.post('/refresh', (req, res) => {
  * Explicitly revokes refresh token and logs audit trail
  */
 router.post('/logout', verifyJWT, (req, res) => {
-  const { refreshToken } = req.body;
+  const { refreshToken, durationSeconds } = req.body;
   const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
   const userAgent = req.headers['user-agent'] || 'Unknown-Client';
 
@@ -186,6 +196,16 @@ router.post('/logout', verifyJWT, (req, res) => {
     const tokenHash = hashToken(refreshToken);
     authDb.revokeRefreshToken(tokenHash);
   }
+
+  // End session and calculate total time stayed in the system
+  if (durationSeconds) {
+    auditDb.updateSessionHeartbeat({
+      jti: req.user.jti,
+      duration_seconds: durationSeconds
+    });
+  }
+  const endedSession = auditDb.endSession({ jti: req.user.jti, reason: 'LOGGED_OUT' });
+  const formattedStay = endedSession.formatted_duration || '0s';
 
   // Log REVOKED event for current access token
   auditDb.logJwtEvent({
@@ -205,14 +225,42 @@ router.post('/logout', verifyJWT, (req, res) => {
     role: req.user.role,
     ip_address: ip,
     user_agent: userAgent,
-    action: `User '${req.user.username}' signed out, JTI ${req.user.jti} invalidated`,
+    action: `User '${req.user.username}' signed out (Total time stayed in system: ${formattedStay})`,
     entity_type: 'identity',
     entity_id: req.user.sub,
     jti: req.user.jti,
-    status: 'SUCCESS'
+    status: 'SUCCESS',
+    metadata: {
+      total_duration_seconds: endedSession.duration_seconds,
+      formatted_duration: formattedStay
+    }
   });
 
-  return res.json({ message: 'Logged out successfully' });
+  return res.json({ 
+    message: 'Logged out successfully',
+    timeStayed: formattedStay,
+    durationSeconds: endedSession.duration_seconds
+  });
+});
+
+/**
+ * POST /api/auth/heartbeat
+ * Receives live active heartbeat from browser with session duration and current active view
+ */
+router.post('/heartbeat', verifyJWT, (req, res) => {
+  const { durationSeconds, currentView } = req.body;
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+  const userAgent = req.headers['user-agent'] || 'Unknown-Client';
+
+  const updateResult = auditDb.updateSessionHeartbeat({
+    jti: req.user.jti,
+    duration_seconds: Number(durationSeconds) || 0,
+    current_view: currentView || 'Dashboard',
+    ip_address: ip,
+    user_agent: userAgent
+  });
+
+  return res.json({ ok: true, session: updateResult });
 });
 
 /**

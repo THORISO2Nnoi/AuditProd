@@ -41,11 +41,29 @@ db.exec(`
     details TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS user_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    jti TEXT UNIQUE NOT NULL,
+    user_id TEXT,
+    username TEXT NOT NULL,
+    role TEXT,
+    ip_address TEXT,
+    user_agent TEXT,
+    login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+    duration_seconds INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'ACTIVE',
+    last_view TEXT DEFAULT 'Dashboard',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS idx_audit_username ON audit_logs(username);
   CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_logs(event);
   CREATE INDEX IF NOT EXISTS idx_audit_jti ON audit_logs(jti);
   CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
   CREATE INDEX IF NOT EXISTS idx_jwt_events_jti ON jwt_events(jti);
+  CREATE INDEX IF NOT EXISTS idx_user_sessions_jti ON user_sessions(jti);
+  CREATE INDEX IF NOT EXISTS idx_user_sessions_username ON user_sessions(username);
 
   -- 🔐 DATABASE-LEVEL IMMUTABILITY TRIGGERS
   -- Prevents ANY update or delete on audit logs, even via direct sqlite3 CLI access
@@ -71,6 +89,13 @@ db.exec(`
   BEFORE DELETE ON jwt_events
   BEGIN
     SELECT RAISE(ABORT, 'JWT events log is immutable: DELETE operations are strictly prohibited.');
+  END;
+
+  -- User session footprints cannot be deleted
+  CREATE TRIGGER IF NOT EXISTS user_sessions_prevent_delete
+  BEFORE DELETE ON user_sessions
+  BEGIN
+    SELECT RAISE(ABORT, 'User session history is immutable: DELETE operations are strictly prohibited.');
   END;
 `);
 
@@ -266,10 +291,33 @@ const getAuditLogs = ({
   }
 
   if (event && event.trim().length > 0) {
-    query += ' AND event = ?';
-    countQuery += ' AND event = ?';
-    params.push(event.trim());
-    countParams.push(event.trim());
+    const ev = event.trim();
+    if (ev === 'VIEW_') {
+      query += ' AND event LIKE ?';
+      countQuery += ' AND event LIKE ?';
+      params.push('VIEW_%');
+      countParams.push('VIEW_%');
+    } else if (ev === 'MUTATION') {
+      query += ' AND (event LIKE ? OR event LIKE ? OR event LIKE ?)';
+      countQuery += ' AND (event LIKE ? OR event LIKE ? OR event LIKE ?)';
+      params.push('%CREATE%', '%UPDATE%', '%DELETE%');
+      countParams.push('%CREATE%', '%UPDATE%', '%DELETE%');
+    } else if (ev === 'AUTH') {
+      query += ' AND (event LIKE ? OR event LIKE ? OR event LIKE ?)';
+      countQuery += ' AND (event LIKE ? OR event LIKE ? OR event LIKE ?)';
+      params.push('%LOGIN%', '%LOGOUT%', '%REFRESH%');
+      countParams.push('%LOGIN%', '%LOGOUT%', '%REFRESH%');
+    } else if (ev.endsWith('_')) {
+      query += ' AND event LIKE ?';
+      countQuery += ' AND event LIKE ?';
+      params.push(`${ev}%`);
+      countParams.push(`${ev}%`);
+    } else {
+      query += ' AND event = ?';
+      countQuery += ' AND event = ?';
+      params.push(ev);
+      countParams.push(ev);
+    }
   }
 
   if (status && status.trim().length > 0) {
@@ -472,6 +520,140 @@ const testImmutabilityTamper = (type = 'UPDATE', userContext = {}) => {
   };
 };
 
+/**
+ * Record a user session upon login
+ */
+const recordSessionLogin = ({
+  jti,
+  user_id = null,
+  username,
+  role = 'user',
+  ip_address = '127.0.0.1',
+  user_agent = ''
+}) => {
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO user_sessions (jti, user_id, username, role, ip_address, user_agent, login_time, last_active, duration_seconds, status, last_view)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'ACTIVE', 'Dashboard')
+      ON CONFLICT(jti) DO UPDATE SET
+        last_active = CURRENT_TIMESTAMP,
+        status = 'ACTIVE'
+    `);
+    stmt.run(jti, user_id, username, role, ip_address, user_agent);
+    return { success: true };
+  } catch (err) {
+    console.error('[Audit DB] Error recording session login:', err.message);
+    return { success: false, error: err.message };
+  }
+};
+
+/**
+ * Update session duration and active ping
+ */
+const updateSessionHeartbeat = ({
+  jti,
+  duration_seconds = 0,
+  current_view = 'Dashboard',
+  ip_address = '127.0.0.1',
+  user_agent = ''
+}) => {
+  try {
+    const existing = db.prepare('SELECT id, login_time, duration_seconds FROM user_sessions WHERE jti = ?').get(jti);
+    if (!existing) {
+      return { success: false, error: 'Session not found' };
+    }
+
+    const newDuration = Math.max(Number(duration_seconds), existing.duration_seconds || 0);
+
+    db.prepare(`
+      UPDATE user_sessions 
+      SET last_active = CURRENT_TIMESTAMP,
+          duration_seconds = ?,
+          last_view = ?,
+          status = 'ACTIVE'
+      WHERE jti = ?
+    `).run(newDuration, current_view, jti);
+
+    return { success: true, duration_seconds: newDuration };
+  } catch (err) {
+    console.error('[Audit DB] Error updating session heartbeat:', err.message);
+    return { success: false, error: err.message };
+  }
+};
+
+/**
+ * End a user session on logout or exit
+ */
+const endSession = ({ jti, reason = 'LOGGED_OUT' }) => {
+  try {
+    const session = db.prepare('SELECT * FROM user_sessions WHERE jti = ?').get(jti);
+    if (!session) {
+      return { success: false, duration_seconds: 0, formatted_duration: '0s' };
+    }
+
+    db.prepare(`
+      UPDATE user_sessions 
+      SET last_active = CURRENT_TIMESTAMP,
+          status = ?
+      WHERE jti = ?
+    `).run(reason, jti);
+
+    const dur = session.duration_seconds || 0;
+    const mins = Math.floor(dur / 60);
+    const secs = dur % 60;
+    const formatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+    return {
+      success: true,
+      session,
+      duration_seconds: dur,
+      formatted_duration: formatted
+    };
+  } catch (err) {
+    console.error('[Audit DB] Error ending session:', err.message);
+    return { success: false, error: err.message, duration_seconds: 0, formatted_duration: '0s' };
+  }
+};
+
+/**
+ * Retrieve user sessions list with real-time status evaluation
+ */
+const getUserSessions = ({ limit = 50 } = {}) => {
+  try {
+    // Automatically transition stale sessions (> 3 minutes inactive) to INACTIVE if still marked ACTIVE
+    db.prepare(`
+      UPDATE user_sessions
+      SET status = 'INACTIVE'
+      WHERE status = 'ACTIVE' 
+        AND (strftime('%s', 'now') - strftime('%s', last_active)) > 180
+    `).run();
+
+    const sessions = db.prepare(`
+      SELECT 
+        id, jti, user_id, username, role, ip_address, user_agent,
+        login_time, last_active, duration_seconds, status, last_view, created_at,
+        (strftime('%s', 'now') - strftime('%s', last_active)) as seconds_since_ping
+      FROM user_sessions
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(Number(limit));
+
+    return sessions.map(s => {
+      const dur = s.duration_seconds || 0;
+      const mins = Math.floor(dur / 60);
+      const secs = dur % 60;
+      const formatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      return {
+        ...s,
+        formatted_duration: formatted
+      };
+    });
+  } catch (err) {
+    console.error('[Audit DB] Error fetching user sessions:', err.message);
+    return [];
+  }
+};
+
 module.exports = {
   db,
   logAudit,
@@ -480,5 +662,9 @@ module.exports = {
   getAuditLogById,
   getJwtEvents,
   getAuditStats,
-  testImmutabilityTamper
+  testImmutabilityTamper,
+  recordSessionLogin,
+  updateSessionHeartbeat,
+  endSession,
+  getUserSessions
 };

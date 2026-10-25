@@ -25,7 +25,7 @@ console.log(`📊 Baseline State:`);
 console.log(`   - Audit Logs: ${lastLogId} records`);
 console.log(`   - Business Products: ${lastProductCount} items`);
 console.log(`   - Business Tasks: ${lastTaskCount} tasks\n`);
-console.log('⏳ Waiting for events... (Passive clicks like switching tabs will NOT log anything)');
+console.log('⏳ Waiting for events... (Logins, Views, Mutations, and Session Durations are captured in real-time!)');
 
 setInterval(() => {
   try {
