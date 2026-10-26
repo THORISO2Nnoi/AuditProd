@@ -88,26 +88,7 @@ router.get('/logs/:id', (req, res) => {
     return res.status(404).json({ error: 'Audit log record not found' });
   }
 
-  // Parse JSON snapshots and diff for frontend rendering
-  let before = null;
-  let after = null;
-  let diff = null;
-  let metadata = null;
-
-  try { if (log.before_snapshot) before = JSON.parse(log.before_snapshot); } catch (e) { before = log.before_snapshot; }
-  try { if (log.after_snapshot) after = JSON.parse(log.after_snapshot); } catch (e) { after = log.after_snapshot; }
-  try { if (log.diff) diff = JSON.parse(log.diff); } catch (e) { diff = log.diff; }
-  try { if (log.metadata) metadata = JSON.parse(log.metadata); } catch (e) { metadata = log.metadata; }
-
-  return res.json({
-    log: {
-      ...log,
-      before_snapshot_parsed: before,
-      after_snapshot_parsed: after,
-      diff_parsed: diff,
-      metadata_parsed: metadata
-    }
-  });
+  return res.json({ log });
 });
 
 /**
@@ -141,21 +122,14 @@ router.get('/export/csv', (req, res) => {
     username: req.user.username,
     role: req.user.role,
     ip_address: ip,
-    user_agent: userAgent,
     action: `User '${req.user.username}' exported ${logs.length} audit rows to CSV format`,
-    entity_type: 'report',
     entity_id: 'csv-export',
     jti: req.user.jti,
-    status: 'SUCCESS',
-    metadata: {
-      format: 'CSV',
-      rows_count: logs.length,
-      filters_applied: req.query
-    }
+    status: 'SUCCESS'
   });
 
   // Build CSV content
-  const headers = ['ID', 'Timestamp', 'Event', 'Username', 'Role', 'IP_Address', 'Status', 'Action', 'Entity_Type', 'Entity_ID'];
+  const headers = ['ID', 'Timestamp', 'Event', 'Username', 'Role', 'IP_Address', 'Status', 'Action', 'Entity_ID'];
   const csvLines = [headers.join(',')];
 
   for (const log of logs) {
@@ -168,7 +142,6 @@ router.get('/export/csv', (req, res) => {
       `"${log.ip_address || ''}"`,
       `"${log.status || ''}"`,
       `"${(log.action || '').replace(/"/g, '""')}"`,
-      `"${log.entity_type || ''}"`,
       `"${log.entity_id || ''}"`
     ];
     csvLines.push(row.join(','));
@@ -270,6 +243,33 @@ router.post('/test-immutability', (req, res) => {
     message: 'Immutability defense test executed',
     ...testResult
   });
+});
+
+/**
+ * POST /api/audit/sync-ssms
+ * Manually trigger full synchronization to SQL Server / SSMS
+ */
+router.post('/sync-ssms', async (req, res) => {
+  try {
+    const { syncToSsms } = require('../utils/ssmsSync');
+    const result = await syncToSsms();
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/audit/sync-status
+ * Retrieve last sync status and statistics
+ */
+router.get('/sync-status', (req, res) => {
+  try {
+    const { getSyncStatus } = require('../utils/ssmsSync');
+    return res.json(getSyncStatus());
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

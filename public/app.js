@@ -432,64 +432,11 @@ const AuditProApp = (() => {
       setEl('diffLogId', `#${log.id}`);
       setEl('diffTimestamp', new Date(log.timestamp).toLocaleString());
       setEl('diffActor', `${log.username} (${log.role})`);
-      setEl('diffIp', `${log.ip_address} | UA: ${log.user_agent ? log.user_agent.substring(0, 30) + '...' : 'Unknown'}`);
+      setEl('diffIp', log.ip_address || 'Unknown');
       setEl('diffActionText', log.action);
+      setEl('diffEntityId', log.entity_id || '—');
+      setEl('diffStatus', log.status || 'SUCCESS');
       setEl('diffModalEventBadge', log.event);
-
-      const diffJtiEl = document.getElementById('diffJti');
-      if (diffJtiEl) diffJtiEl.textContent = log.jti || 'N/A';
-
-      // Populate Snapshots JSON
-      document.getElementById('rawBeforeJson').textContent = log.before_snapshot_parsed ? JSON.stringify(log.before_snapshot_parsed, null, 2) : 'null (Created or Initial State)';
-      document.getElementById('rawAfterJson').textContent = log.after_snapshot_parsed ? JSON.stringify(log.after_snapshot_parsed, null, 2) : 'null (Deleted)';
-
-      // Render Yellow Highlighted Diff
-      const diffContainer = document.getElementById('diffCardsContainer');
-      const diffCountBadge = document.getElementById('diffCountBadge');
-
-      const diff = log.diff_parsed || {};
-      const diffKeys = Object.keys(diff);
-
-      if (diffKeys.length === 0) {
-        diffCountBadge.textContent = 'No delta recorded';
-        diffContainer.innerHTML = `
-          <div class="diff-card-item" style="border-color: rgba(255,255,255,0.1); background: rgba(255,255,255,0.03);">
-            <div class="diff-field-name" style="color: var(--text-muted);">Action did not modify record fields directly (e.g. Screen View or Authentication)</div>
-          </div>
-        `;
-      } else {
-        diffCountBadge.textContent = `${diffKeys.length} field${diffKeys.length > 1 ? 's' : ''} modified`;
-        diffContainer.innerHTML = diffKeys.map(key => {
-          const item = diff[key];
-          let beforeVal = '—';
-          let afterVal = '—';
-
-          if (item && typeof item === 'object' && ('before' in item || 'after' in item)) {
-            beforeVal = item.before !== undefined && item.before !== null ? (typeof item.before === 'object' ? JSON.stringify(item.before) : String(item.before)) : 'null';
-            afterVal = item.after !== undefined && item.after !== null ? (typeof item.after === 'object' ? JSON.stringify(item.after) : String(item.after)) : 'null';
-          } else {
-            afterVal = typeof item === 'object' ? JSON.stringify(item) : String(item);
-          }
-
-          return `
-            <div class="diff-card-item">
-              <div class="diff-field-header">
-                <span class="badge badge-warning">MODIFIED FIELD</span>
-                <span class="diff-field-name">${escapeHtml(key)}</span>
-              </div>
-              <div class="diff-compare-row">
-                <div class="diff-box before" title="Value Before Mutation">
-                  ${escapeHtml(beforeVal)}
-                </div>
-                <div class="diff-arrow">➔</div>
-                <div class="diff-box after" title="Value After Mutation">
-                  ${escapeHtml(afterVal)}
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('');
-      }
 
       document.getElementById('diffModalOverlay').style.display = 'flex';
     } catch (err) {
@@ -973,7 +920,7 @@ const AuditProApp = (() => {
   async function loadUserSessions() {
     const tbody = document.getElementById('userSessionsBody');
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Querying active sessions and dwell times...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center">Querying active sessions and dwell times...</td></tr>`;
 
     try {
       const res = await apiRequest('/api/audit/sessions?limit=50');
@@ -982,7 +929,7 @@ const AuditProApp = (() => {
       const sessions = data.sessions || [];
 
       if (sessions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">No session dwell times recorded yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">No session dwell times recorded yet.</td></tr>`;
         return;
       }
 
@@ -992,6 +939,7 @@ const AuditProApp = (() => {
         const statusBadge = isOnline ? 'badge-success' : isLoggedOut ? 'badge-blue' : 'badge-warning';
         const statusText = isOnline ? '🟢 Logged In (Active)' : isLoggedOut ? '⚪ Logged Out' : '⏱️ Timed Out';
         const roleEmoji = s.role === 'admin' ? '👑' : s.role === 'auditor' ? '🔍' : '👤';
+        const logoutDisplay = s.logout_time ? `<span class="mono" style="font-size:0.78rem;">${new Date(s.logout_time).toLocaleTimeString()}</span>` : isOnline ? `<span class="badge badge-success">Active Now</span>` : `<span class="text-muted">—</span>`;
 
         return `
           <tr>
@@ -1004,18 +952,24 @@ const AuditProApp = (() => {
             <td><span class="role-pill" style="font-size:0.72rem;">${roleEmoji} ${(s.role || '').toUpperCase()}</span></td>
             <td><span class="badge ${statusBadge}">${statusText}</span></td>
             <td class="text-muted mono" style="font-size:0.78rem;">${new Date(s.login_time).toLocaleTimeString()}</td>
-            <td class="text-muted mono" style="font-size:0.78rem;">${new Date(s.last_active).toLocaleTimeString()}</td>
+            <td>${logoutDisplay}</td>
             <td>
               <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem; border: 1px solid rgba(16, 185, 129, 0.3);">
                 ⏱️ ${s.formatted_duration || '0s'}
               </span>
             </td>
+            <td>
+              <span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-family: var(--font-mono); font-weight: 700; font-size: 0.82rem; border: 1px solid rgba(59, 130, 246, 0.3);">
+                🎯 ${s.total_actions || 0}
+              </span>
+            </td>
+            <td class="text-muted mono" style="font-size:0.78rem;">${new Date(s.last_active).toLocaleTimeString()}</td>
             <td><span class="tag">${escapeHtml(s.last_view || 'Dashboard')}</span></td>
           </tr>
         `;
       }).join('');
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Error: ${escapeHtml(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger">Error: ${escapeHtml(e.message)}</td></tr>`;
     }
   }
 
@@ -1084,7 +1038,7 @@ const AuditProApp = (() => {
             <td><strong>${escapeHtml(l.username || 'system')}</strong> <span class="text-muted" style="font-size:0.75rem;">(${l.role || ''})</span></td>
             <td>${categoryBadge}</td>
             <td>${escapeHtml(l.action || '')}</td>
-            <td><span class="tag">${escapeHtml(l.entity_type || '—')}</span></td>
+            <td><span class="tag">${escapeHtml(l.entity_id || '—')}</span></td>
             <td>
               <button class="btn btn-sm btn-outline-accent" onclick="event.stopPropagation(); AuditProApp.inspectLogDiff(${l.id})">
                 Inspect Details
@@ -1177,11 +1131,18 @@ const AuditProApp = (() => {
   }
 
   async function quickSwitch(targetUsername, silent = false) {
+    const elapsedSec = state.sessionStartTime ? Math.max(0, Math.floor((Date.now() - state.sessionStartTime) / 1000)) : 0;
     try {
       const res = await fetch('/api/auth/quick-switch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUsername })
+        body: JSON.stringify({
+          targetUsername,
+          previousJti: state.currentJti,
+          previousUsername: state.currentUser ? state.currentUser.username : null,
+          previousRole: state.currentUser ? state.currentUser.role : null,
+          previousDurationSeconds: elapsedSec
+        })
       });
 
       const data = await res.json();
@@ -1211,6 +1172,30 @@ const AuditProApp = (() => {
       loadDashboardData();
     } catch (err) {
       showToast(`Quick switch error: ${err.message}`, 'error');
+    }
+  }
+
+  /**
+   * Manual SSMS Database Synchronization
+   */
+  async function manualSsmsSync() {
+    const btn = document.getElementById('btnSyncSsms');
+    if (btn) btn.textContent = '⏳ Syncing to SSMS...';
+    try {
+      const res = await apiRequest('/api/audit/sync-ssms', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`🗄️ Database synchronized with SSMS: ${data.stats?.auditLogsCount || 0} logs, ${data.stats?.userSessionsCount || 0} sessions`, 'success');
+      } else {
+        showToast(`Sync notice: ${data.error || 'Completed'}`, 'warning');
+      }
+    } catch (e) {
+      showToast(`Sync error: ${e.message}`, 'error');
+    } finally {
+      if (btn) btn.textContent = '🗄️ Sync Database to SSMS';
+      loadUserSessions();
+      loadFootprintsStream();
+      loadComplianceStats();
     }
   }
 
@@ -1290,6 +1275,7 @@ const AuditProApp = (() => {
     handleLogin,
     fillAndLogin,
     quickSwitch,
-    logout
+    logout,
+    manualSsmsSync
   };
 })();

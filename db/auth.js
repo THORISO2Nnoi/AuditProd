@@ -6,6 +6,14 @@ const crypto = require('crypto');
 const dbPath = path.join(__dirname, 'auth.db');
 const db = new Database(dbPath);
 
+let triggerSyncDebounced;
+try {
+  const ssms = require('../utils/ssmsSync');
+  triggerSyncDebounced = ssms.triggerSyncDebounced;
+} catch (e) {
+  triggerSyncDebounced = () => {};
+}
+
 // Enable WAL mode for high concurrency and resilience
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -87,6 +95,7 @@ const createUser = ({ username, password, role, full_name }) => {
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(id, username, password_hash, role, full_name, now, now);
 
+  if (triggerSyncDebounced) triggerSyncDebounced();
   return getUserById(id);
 };
 
@@ -107,6 +116,7 @@ const updateUser = (id, { role, full_name, password }) => {
   params.push(id);
 
   db.prepare(query).run(...params);
+  if (triggerSyncDebounced) triggerSyncDebounced();
   return getUserById(id);
 };
 
@@ -115,6 +125,7 @@ const deleteUser = (id) => {
   if (!user) return null;
 
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  if (triggerSyncDebounced) triggerSyncDebounced();
   return user;
 };
 

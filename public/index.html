@@ -335,9 +335,14 @@
         <div class="card-header">
           <div>
             <h2>⏱️ User Presence & Time Spent in System</h2>
-            <p class="text-muted">Tracks who is currently logged in, when they arrived, their last action, and how long they have spent in the system.</p>
+            <p class="text-muted">Tracks who is currently logged in, when they arrived, their last action, when they logged out, and how long they spent in the system.</p>
           </div>
-          <button class="btn btn-outline" onclick="AuditProApp.loadUserSessions()">🔄 Refresh Presence</button>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <button class="btn btn-outline" id="btnSyncSsms" onclick="AuditProApp.manualSsmsSync()" title="Synchronize SQLite records with SQL Server (SSMS)">
+              🗄️ Sync Database to SSMS
+            </button>
+            <button class="btn btn-outline" onclick="AuditProApp.loadUserSessions()">🔄 Refresh Presence</button>
+          </div>
         </div>
 
         <div class="table-responsive">
@@ -348,14 +353,16 @@
                 <th>Role</th>
                 <th>Current Status</th>
                 <th>Sign-in Time</th>
-                <th>Last Active Ping</th>
+                <th>Sign-out Time</th>
                 <th>⏱️ Time Spent in System</th>
+                <th>🎯 Actions Taken</th>
+                <th>Last Active Ping</th>
                 <th>Current / Last Viewed Screen</th>
               </tr>
             </thead>
             <tbody id="userSessionsBody">
               <tr>
-                <td colspan="7" class="text-center">Loading user presence and time spent...</td>
+                <td colspan="9" class="text-center">Loading user presence and time spent...</td>
               </tr>
             </tbody>
           </table>
@@ -569,15 +576,15 @@
     <div class="modal-card modal-large" id="diffModal">
       <div class="modal-header">
         <div class="modal-title-group">
-          <span class="badge" id="diffModalEventBadge">UPDATE</span>
-          <h3>Before / After Activity Snapshot</h3>
+          <span class="badge" id="diffModalEventBadge">ACTIVITY</span>
+          <h3>Audit Activity Record</h3>
         </div>
         <button class="btn-icon" onclick="AuditProApp.closeDiffModal()">✕</button>
       </div>
 
       <div class="modal-body">
         <!-- Metadata Header -->
-        <div class="diff-metadata-grid">
+        <div class="diff-metadata-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem;">
           <div class="diff-meta-item">
             <span class="meta-label">Audit Log ID:</span>
             <span class="meta-value" id="diffLogId">#12</span>
@@ -594,33 +601,26 @@
             <span class="meta-label">IP Address:</span>
             <span class="meta-value" id="diffIp">192.168.1.100</span>
           </div>
+          <div class="diff-meta-item">
+            <span class="meta-label">Target / Entity:</span>
+            <span class="meta-value" id="diffEntityId">—</span>
+          </div>
+          <div class="diff-meta-item">
+            <span class="meta-label">Execution Status:</span>
+            <span class="meta-value" id="diffStatus">SUCCESS</span>
+          </div>
         </div>
 
-        <div class="diff-action-banner" style="margin-top: 1rem; padding: 0.75rem 1rem; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle); border-radius: 8px;">
+        <div class="diff-action-banner" style="margin-top: 1rem; padding: 0.85rem 1rem; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle); border-radius: 8px;">
           <span class="meta-label" style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted);">Action Recorded:</span>
-          <p id="diffActionText" style="margin: 0.25rem 0 0; font-weight: 600; color: var(--text-primary);"></p>
+          <p id="diffActionText" style="margin: 0.35rem 0 0; font-weight: 600; color: var(--text-primary);"></p>
         </div>
 
-        <!-- Visual Changed Fields Highlight Box -->
-        <div class="diff-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.25rem; margin-bottom: 0.75rem;">
-          <h4 style="margin: 0; font-size: 0.95rem;">Field Deltas & Changes</h4>
-          <span class="badge badge-warning" id="diffCountBadge">0 fields modified</span>
-        </div>
-
-        <div class="diff-cards-container" id="diffCardsContainer">
-          <!-- Dynamically populated cards -->
-        </div>
-
-        <!-- Raw Snapshots -->
-        <div class="raw-snapshots-grid mt-4" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.25rem;">
-          <div class="snapshot-pane" style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 0.75rem;">
-            <div class="snapshot-header" style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.5rem;">State Before Action</div>
-            <pre class="json-code" id="rawBeforeJson" style="font-family: var(--font-mono); font-size: 0.78rem; overflow: auto; max-height: 200px; color: #94a3b8; margin: 0;">null</pre>
-          </div>
-          <div class="snapshot-pane" style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 0.75rem;">
-            <div class="snapshot-header" style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.5rem;">State After Action</div>
-            <pre class="json-code" id="rawAfterJson" style="font-family: var(--font-mono); font-size: 0.78rem; overflow: auto; max-height: 200px; color: #94a3b8; margin: 0;">null</pre>
-          </div>
+        <div style="margin-top: 1.25rem; padding: 1rem; background: rgba(15, 23, 42, 0.45); border: 1px solid var(--border-subtle); border-radius: 8px;">
+          <h4 style="margin: 0 0 0.4rem 0; font-size: 0.88rem; color: var(--accent-light);">🛡️ Forensic Immutability & SSMS Replication</h4>
+          <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.5;">
+            This audit record is immutably sealed in SQLite (protected against UPDATE and DELETE by native compliance triggers) and replicated in real-time to Microsoft SQL Server (SSMS) in both <code style="color:var(--text-primary);">AuditPro_Audit.dbo.audit_logs</code> and unified <code style="color:var(--text-primary);">AuditProDB.dbo.audit_logs</code>.
+          </p>
         </div>
       </div>
 

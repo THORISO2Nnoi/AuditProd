@@ -16,16 +16,9 @@ db.exec(`
     username TEXT,
     role TEXT,
     ip_address TEXT,
-    user_agent TEXT,
     action TEXT NOT NULL,
-    entity_type TEXT,
     entity_id TEXT,
-    before_snapshot TEXT,
-    after_snapshot TEXT,
-    diff TEXT,
-    jti TEXT,
-    status TEXT DEFAULT 'SUCCESS',
-    metadata TEXT
+    status TEXT DEFAULT 'SUCCESS'
   );
 
   CREATE TABLE IF NOT EXISTS jwt_events (
@@ -51,15 +44,17 @@ db.exec(`
     user_agent TEXT,
     login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+    logout_time DATETIME,
     duration_seconds INTEGER DEFAULT 0,
+    formatted_duration TEXT DEFAULT '0s',
     status TEXT DEFAULT 'ACTIVE',
     last_view TEXT DEFAULT 'Dashboard',
+    total_actions INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE INDEX IF NOT EXISTS idx_audit_username ON audit_logs(username);
   CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_logs(event);
-  CREATE INDEX IF NOT EXISTS idx_audit_jti ON audit_logs(jti);
   CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
   CREATE INDEX IF NOT EXISTS idx_jwt_events_jti ON jwt_events(jti);
   CREATE INDEX IF NOT EXISTS idx_user_sessions_jti ON user_sessions(jti);
@@ -98,6 +93,30 @@ db.exec(`
     SELECT RAISE(ABORT, 'User session history is immutable: DELETE operations are strictly prohibited.');
   END;
 `);
+
+// Migration check: Ensure user_sessions has logout_time, formatted_duration, total_actions
+try {
+  const sessionCols = db.prepare('PRAGMA table_info(user_sessions)').all().map(c => c.name);
+  if (!sessionCols.includes('logout_time')) {
+    db.exec('ALTER TABLE user_sessions ADD COLUMN logout_time DATETIME;');
+  }
+  if (!sessionCols.includes('formatted_duration')) {
+    db.exec("ALTER TABLE user_sessions ADD COLUMN formatted_duration TEXT DEFAULT '0s';");
+  }
+  if (!sessionCols.includes('total_actions')) {
+    db.exec('ALTER TABLE user_sessions ADD COLUMN total_actions INTEGER DEFAULT 0;');
+  }
+} catch (e) {
+  // Column migration notice
+}
+
+let triggerSyncDebounced;
+try {
+  const ssms = require('../utils/ssmsSync');
+  triggerSyncDebounced = ssms.triggerSyncDebounced;
+} catch (e) {
+  triggerSyncDebounced = () => {};
+}
 
 function seedAuditInitialData() {
   const count = db.prepare('SELECT COUNT(*) as count FROM audit_logs').get().count;
@@ -207,9 +226,8 @@ const logAudit = ({
 
     const stmt = db.prepare(`
       INSERT INTO audit_logs (
-        timestamp, event, user_id, username, role, ip_address, user_agent, action,
-        entity_type, entity_id, before_snapshot, after_snapshot, diff, jti, status, metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        timestamp, event, user_id, username, role, ip_address, action, entity_id, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -219,17 +237,26 @@ const logAudit = ({
       username,
       role,
       ip_address,
-      user_agent,
       action,
-      entity_type,
       entity_id ? String(entity_id) : null,
-      beforeStr,
-      afterStr,
-      diffStr,
-      jti,
-      status,
-      metaStr
+      status
     );
+
+    // Track user action count on the active session
+    if (jti) {
+      try {
+        db.prepare(`
+          UPDATE user_sessions 
+          SET total_actions = COALESCE(total_actions, 0) + 1,
+              last_active = CURRENT_TIMESTAMP
+          WHERE jti = ?
+        `).run(jti);
+      } catch (err) {
+        // non-blocking
+      }
+    }
+
+    if (triggerSyncDebounced) triggerSyncDebounced();
 
     return { id: result.lastInsertRowid, success: true };
   } catch (err) {
@@ -350,10 +377,10 @@ const getAuditLogs = ({
 
   if (search && search.trim().length > 0) {
     const s = `%${search.trim()}%`;
-    query += ' AND (action LIKE ? OR jti LIKE ? OR username LIKE ? OR entity_id LIKE ?)';
-    countQuery += ' AND (action LIKE ? OR jti LIKE ? OR username LIKE ? OR entity_id LIKE ?)';
-    params.push(s, s, s, s);
-    countParams.push(s, s, s, s);
+    query += ' AND (action LIKE ? OR username LIKE ? OR entity_id LIKE ?)';
+    countQuery += ' AND (action LIKE ? OR username LIKE ? OR entity_id LIKE ?)';
+    params.push(s, s, s);
+    countParams.push(s, s, s);
   }
 
   const totalRecord = db.prepare(countQuery).get(...countParams);
@@ -533,13 +560,23 @@ const recordSessionLogin = ({
 }) => {
   try {
     const stmt = db.prepare(`
-      INSERT INTO user_sessions (jti, user_id, username, role, ip_address, user_agent, login_time, last_active, duration_seconds, status, last_view)
-      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'ACTIVE', 'Dashboard')
+      INSERT INTO user_sessions (
+        jti, user_id, username, role, ip_address, user_agent,
+        login_time, last_active, logout_time, duration_seconds, formatted_duration,
+        status, last_view, total_actions, created_at
+      )
+      VALUES (
+        ?, ?, ?, ?, ?, ?,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, 0, '0s',
+        'ACTIVE', 'Dashboard', 1, CURRENT_TIMESTAMP
+      )
       ON CONFLICT(jti) DO UPDATE SET
         last_active = CURRENT_TIMESTAMP,
-        status = 'ACTIVE'
+        status = 'ACTIVE',
+        logout_time = NULL
     `);
     stmt.run(jti, user_id, username, role, ip_address, user_agent);
+    if (triggerSyncDebounced) triggerSyncDebounced();
     return { success: true };
   } catch (err) {
     console.error('[Audit DB] Error recording session login:', err.message);
@@ -564,17 +601,23 @@ const updateSessionHeartbeat = ({
     }
 
     const newDuration = Math.max(Number(duration_seconds), existing.duration_seconds || 0);
+    const mins = Math.floor(newDuration / 60);
+    const secs = newDuration % 60;
+    const formatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 
     db.prepare(`
       UPDATE user_sessions 
       SET last_active = CURRENT_TIMESTAMP,
           duration_seconds = ?,
+          formatted_duration = ?,
           last_view = ?,
           status = 'ACTIVE'
       WHERE jti = ?
-    `).run(newDuration, current_view, jti);
+    `).run(newDuration, formatted, current_view, jti);
 
-    return { success: true, duration_seconds: newDuration };
+    if (triggerSyncDebounced) triggerSyncDebounced();
+
+    return { success: true, duration_seconds: newDuration, formatted_duration: formatted };
   } catch (err) {
     console.error('[Audit DB] Error updating session heartbeat:', err.message);
     return { success: false, error: err.message };
@@ -584,34 +627,40 @@ const updateSessionHeartbeat = ({
 /**
  * End a user session on logout or exit
  */
-const endSession = ({ jti, reason = 'LOGGED_OUT' }) => {
+const endSession = ({ jti, reason = 'LOGGED_OUT', duration_seconds = null }) => {
   try {
     const session = db.prepare('SELECT * FROM user_sessions WHERE jti = ?').get(jti);
     if (!session) {
-      return { success: false, duration_seconds: 0, formatted_duration: '0s' };
+      return { success: false, duration_seconds: 0, formatted_duration: '0s', logout_time: null };
     }
+
+    const dur = duration_seconds !== null ? Math.max(Number(duration_seconds), session.duration_seconds || 0) : (session.duration_seconds || 0);
+    const mins = Math.floor(dur / 60);
+    const secs = dur % 60;
+    const formatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 
     db.prepare(`
       UPDATE user_sessions 
       SET last_active = CURRENT_TIMESTAMP,
+          logout_time = CURRENT_TIMESTAMP,
+          duration_seconds = ?,
+          formatted_duration = ?,
           status = ?
       WHERE jti = ?
-    `).run(reason, jti);
+    `).run(dur, formatted, reason, jti);
 
-    const dur = session.duration_seconds || 0;
-    const mins = Math.floor(dur / 60);
-    const secs = dur % 60;
-    const formatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    if (triggerSyncDebounced) triggerSyncDebounced();
 
     return {
       success: true,
       session,
       duration_seconds: dur,
-      formatted_duration: formatted
+      formatted_duration: formatted,
+      logout_time: new Date().toISOString()
     };
   } catch (err) {
     console.error('[Audit DB] Error ending session:', err.message);
-    return { success: false, error: err.message, duration_seconds: 0, formatted_duration: '0s' };
+    return { success: false, error: err.message, duration_seconds: 0, formatted_duration: '0s', logout_time: null };
   }
 };
 
@@ -631,7 +680,8 @@ const getUserSessions = ({ limit = 50 } = {}) => {
     const sessions = db.prepare(`
       SELECT 
         id, jti, user_id, username, role, ip_address, user_agent,
-        login_time, last_active, duration_seconds, status, last_view, created_at,
+        login_time, last_active, logout_time, duration_seconds, formatted_duration,
+        status, last_view, total_actions, created_at,
         (strftime('%s', 'now') - strftime('%s', last_active)) as seconds_since_ping
       FROM user_sessions
       ORDER BY id DESC
@@ -642,7 +692,7 @@ const getUserSessions = ({ limit = 50 } = {}) => {
       const dur = s.duration_seconds || 0;
       const mins = Math.floor(dur / 60);
       const secs = dur % 60;
-      const formatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      const formatted = s.formatted_duration || (mins > 0 ? `${mins}m ${secs}s` : `${secs}s`);
       return {
         ...s,
         formatted_duration: formatted

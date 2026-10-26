@@ -84,9 +84,18 @@ app.listen(PORT, () => {
   console.log(`🗄️  Auth DB:     db/auth.db (users, refresh_tokens)`);
   console.log(`🗄️  Business DB: db/business.db (products, tasks)`);
   console.log(`🗄️  Audit DB:    db/audit.db (immutable triggers active)`);
+  console.log(`🗄️  SSMS Sync:   AuditPro_Audit / AuditProDB (Live Replication)`);
   console.log(`👥 Demo Logins:`);
   console.log(`   Admin:   admin / Admin@123   (Control Center)`);
   console.log(`   Auditor: auditor / Audit@123 (Compliance Center)`);
   console.log(`   User:    alice / User@123    (My Workspace)`);
   console.log(`=======================================================`);
+
+  // Sync databases to SSMS immediately on startup
+  try {
+    const { syncToSsms } = require('./utils/ssmsSync');
+    syncToSsms();
+  } catch (e) {
+    console.warn('[Startup Sync Notice]', e.message);
+  }
 });

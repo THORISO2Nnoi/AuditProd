@@ -198,13 +198,11 @@ router.post('/logout', verifyJWT, (req, res) => {
   }
 
   // End session and calculate total time stayed in the system
-  if (durationSeconds) {
-    auditDb.updateSessionHeartbeat({
-      jti: req.user.jti,
-      duration_seconds: durationSeconds
-    });
-  }
-  const endedSession = auditDb.endSession({ jti: req.user.jti, reason: 'LOGGED_OUT' });
+  const endedSession = auditDb.endSession({
+    jti: req.user.jti,
+    reason: 'LOGGED_OUT',
+    duration_seconds: durationSeconds
+  });
   const formattedStay = endedSession.formatted_duration || '0s';
 
   // Log REVOKED event for current access token
@@ -231,6 +229,7 @@ router.post('/logout', verifyJWT, (req, res) => {
     jti: req.user.jti,
     status: 'SUCCESS',
     metadata: {
+      logout_time: endedSession.logout_time,
       total_duration_seconds: endedSession.duration_seconds,
       formatted_duration: formattedStay
     }
@@ -239,7 +238,8 @@ router.post('/logout', verifyJWT, (req, res) => {
   return res.json({ 
     message: 'Logged out successfully',
     timeStayed: formattedStay,
-    durationSeconds: endedSession.duration_seconds
+    durationSeconds: endedSession.duration_seconds,
+    logoutTime: endedSession.logout_time
   });
 });
 
@@ -290,7 +290,7 @@ router.get('/me', verifyJWT, (req, res) => {
  * Dedicated demo endpoint allowing 1-click role testing (admin, auditor, alice, bob)
  */
 router.post('/quick-switch', (req, res) => {
-  const { targetUsername } = req.body;
+  const { targetUsername, previousJti, previousUsername, previousRole, previousDurationSeconds } = req.body;
   const allowed = ['admin', 'auditor', 'alice', 'bob'];
 
   if (!allowed.includes(targetUsername)) {
@@ -305,7 +305,47 @@ router.post('/quick-switch', (req, res) => {
   const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
   const userAgent = req.headers['user-agent'] || 'AuditPro-Demo-Switcher';
 
+  // If previous session active, end it properly with logout_time and log LOGOUT audit record
+  if (previousJti) {
+    const ended = auditDb.endSession({
+      jti: previousJti,
+      reason: 'LOGGED_OUT',
+      duration_seconds: previousDurationSeconds
+    });
+
+    const prevUser = previousUsername || 'user';
+    auditDb.logAudit({
+      event: 'LOGOUT',
+      user_id: null,
+      username: prevUser,
+      role: previousRole || 'user',
+      ip_address: ip,
+      user_agent: userAgent,
+      action: `User '${prevUser}' signed out upon context switch (Total time stayed: ${ended.formatted_duration || '0s'})`,
+      entity_type: 'identity',
+      entity_id: previousJti,
+      jti: previousJti,
+      status: 'SUCCESS',
+      metadata: {
+        logout_time: ended.logout_time,
+        total_duration_seconds: ended.duration_seconds,
+        formatted_duration: ended.formatted_duration,
+        switched_to: targetUsername
+      }
+    });
+  }
+
   const tokens = generateTokenPair(user, { ip, userAgent, endpoint: '/api/auth/quick-switch' });
+
+  // Record new session in user_sessions database table
+  auditDb.recordSessionLogin({
+    jti: tokens.jti,
+    user_id: user.id,
+    username: user.username,
+    role: user.role,
+    ip_address: ip,
+    user_agent: userAgent
+  });
 
   auditDb.logAudit({
     event: 'LOGIN',
@@ -319,7 +359,7 @@ router.post('/quick-switch', (req, res) => {
     entity_id: user.id,
     jti: tokens.jti,
     status: 'SUCCESS',
-    metadata: { demo_mode: true, role: user.role }
+    metadata: { demo_mode: true, role: user.role, token_jti: tokens.jti }
   });
 
   return res.json({

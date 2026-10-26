@@ -5,6 +5,14 @@ const crypto = require('crypto');
 const dbPath = path.join(__dirname, 'business.db');
 const db = new Database(dbPath);
 
+let triggerSyncDebounced;
+try {
+  const ssms = require('../utils/ssmsSync');
+  triggerSyncDebounced = ssms.triggerSyncDebounced;
+} catch (e) {
+  triggerSyncDebounced = () => {};
+}
+
 db.pragma('journal_mode = WAL');
 
 // Initialize schema
@@ -131,6 +139,7 @@ const createProduct = ({ name, sku, category, price, stock, description, created
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, name, sku, category, Number(price), Number(stock), description || '', created_by, now, now);
 
+  if (triggerSyncDebounced) triggerSyncDebounced();
   return getProductById(id);
 };
 
@@ -155,6 +164,7 @@ const updateProduct = (id, data) => {
     WHERE id = ?
   `).run(updated.name, updated.sku, updated.category, updated.price, updated.stock, updated.description, updated.updated_at, id);
 
+  if (triggerSyncDebounced) triggerSyncDebounced();
   return getProductById(id);
 };
 
@@ -163,6 +173,7 @@ const deleteProduct = (id) => {
   if (!current) return null;
 
   db.prepare('DELETE FROM products WHERE id = ?').run(id);
+  if (triggerSyncDebounced) triggerSyncDebounced();
   return current;
 };
 
@@ -222,6 +233,7 @@ const createTask = ({ title, description, priority, status, assigned_to, created
     now
   );
 
+  if (triggerSyncDebounced) triggerSyncDebounced();
   return getTaskById(id);
 };
 
@@ -255,6 +267,7 @@ const updateTask = (id, data) => {
     id
   );
 
+  if (triggerSyncDebounced) triggerSyncDebounced();
   return getTaskById(id);
 };
 
@@ -263,6 +276,7 @@ const deleteTask = (id) => {
   if (!current) return null;
 
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+  if (triggerSyncDebounced) triggerSyncDebounced();
   return current;
 };
 
