@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "watch": "node watch-db.js"
+    "watch": "node watch-db.js",
+    "migrate": "node migrations/runner.js up",
+    "migrate:rollback": "node migrations/runner.js down",
+    "migrate:status": "node migrations/runner.js status",
+    "migrate:reset": "node migrations/runner.js reset"
   },
   "keywords": [
     "audit-logging",

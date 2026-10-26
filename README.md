@@ -88,6 +88,23 @@ NODE_ENV=development
 npm start
 ```
 
+### 5. Database Migrations
+Manage database schemas and initial seed data across all 3 isolated SQLite databases:
+```bash
+# Check current migration status
+npm run migrate:status
+
+# Run all pending migrations
+npm run migrate
+
+# Roll back the latest migration batch
+npm run migrate:rollback
+
+# Reset and re-apply all migrations from scratch
+npm run migrate:reset
+```
+*For Microsoft SQL Server / SSMS migrations, refer to [`migrations/sqlserver/001_sqlserver_init_schema.sql`](migrations/sqlserver/001_sqlserver_init_schema.sql).*
+
 Visit the dashboard in your browser:
 👉 **[http://localhost:3000](http://localhost:3000)**
 
